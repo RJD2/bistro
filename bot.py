@@ -33,6 +33,7 @@ async def process_rm_command(message: types.Message):
 @dp.message_handler(lambda message: message.text and message.text == 'Быстротест')
 async def process_command_1(message: types.Message):
     await message.reply(questions[0]['word'])
+    # await message.reply(message.from_user)
     await sleep(1)
     keyboard = kb.get_keyboard(questions[0])
     await message.reply(MESSAGES['quick2'].format(**questions[0]), reply_markup=keyboard)
