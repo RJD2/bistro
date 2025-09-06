@@ -1,19 +1,10 @@
-from sqlalchemy import create_engine
-# import psycopg2
-# from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-#
-# # Устанавливаем соединение с postgres
-# connection = psycopg2.connect(dbname="mydb", user="myuser", password="mypass")
-# connection.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-#
-# # Создаем курсор для выполнения операций с базой данных
-# cursor = connection.cursor()
-# sql_create_database = cursor.execute('create database sqlalchemy_tuts')
-# # Закрываем соединение
-# cursor.close()
-# connection.close()
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+import config
 
-engine = create_engine("postgresql+psycopg2://myuser:mypass@localhost/mydb")
-engine.connect()
+engine = create_async_engine(config.DB_URL, echo=False)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-print(engine)
+async def get_session() -> AsyncSession:
+    async with async_session() as session:
+        yield session
