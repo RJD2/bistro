@@ -4,9 +4,8 @@ from sqlalchemy import delete
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import async_session
-from models import User, Answer
+from models import User, Answer, Question
 from states import GameStates
-from questions import questions
 from keyboards import get_keyboard
 from messages import MESSAGES
 
@@ -22,29 +21,28 @@ async def get_or_create_user(tg_id: int, session: AsyncSession):
     return user
 
 
-# Запуск игры
 async def start_game(message: types.Message, state: FSMContext):
     async with async_session() as session:
         user = await get_or_create_user(message.from_user.id, session)
 
-        # находим какие вопросы уже были
+        # Находим уже отвеченные вопросы
         result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
         answered_ids = {row[0] for row in result.all()}
 
-        # первый неотвеченный вопрос
-        next_qid = next((i for i in range(len(questions)) if i not in answered_ids), None)
+        # Первый неотвеченный вопрос
+        result = await session.execute(select(Question).where(Question.id.not_in(answered_ids)))
+        question = result.scalars().first()
 
-        if next_qid is None:
+        if not question:
             await message.answer(MESSAGES["game_over"])
             return
 
-        await state.update_data(qid=next_qid)
-        q = questions[next_qid]
-        await message.answer(q["word"], reply_markup=get_keyboard(q["options"], next_qid))
+        await state.update_data(qid=question.id)
+        options = question.options.split(",")
+        await message.answer(question.word, reply_markup=get_keyboard(options, question.id))
         await GameStates.waiting_for_answer.set()
 
 
-# Обработка ответа
 async def process_answer(callback: types.CallbackQuery, state: FSMContext):
     _, qid, opt = callback.data.split(":")
     qid, opt = int(qid), int(opt)
@@ -52,26 +50,28 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
     async with async_session() as session:
         user = await get_or_create_user(callback.from_user.id, session)
 
-        # сохраняем ответ
-        answer = Answer(user_id=user.id, question_id=qid, choice=questions[qid]["options"][opt])
+        # Сохраняем ответ
+        result = await session.execute(select(Question).where(Question.id == qid))
+        question = result.scalars().first()
+        answer = Answer(user_id=user.id, question_id=qid, choice=question.options.split(",")[opt])
         session.add(answer)
         await session.commit()
 
-    # убираем кнопки
+    # Убираем кнопки
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(f"Вы {questions[qid]['options'][opt]}")
+    await callback.message.answer(f"Вы {question.options.split(',')[opt]}")
 
-    # ищем следующий вопрос
-    async with async_session() as session:
-        result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
-        answered_ids = {row[0] for row in result.all()}
+    # Ищем следующий вопрос
+    result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
+    answered_ids = {row[0] for row in result.all()}
 
-    next_qid = next((i for i in range(len(questions)) if i not in answered_ids), None)
+    result = await session.execute(select(Question).where(Question.id.not_in(answered_ids)))
+    next_question = result.scalars().first()
 
-    if next_qid is not None:
-        q = questions[next_qid]
-        await state.update_data(qid=next_qid)
-        await callback.message.answer(q["word"], reply_markup=get_keyboard(q["options"], next_qid))
+    if next_question:
+        options = next_question.options.split(",")
+        await state.update_data(qid=next_question.id)
+        await callback.message.answer(next_question.word, reply_markup=get_keyboard(options, next_question.id))
     else:
         await callback.message.answer(MESSAGES["game_over"])
         await state.finish()
