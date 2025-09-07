@@ -4,5 +4,4 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.environ.get("TOKEN", "")
-
 DB_URL = os.environ.get("DB", "")

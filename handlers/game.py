@@ -1,5 +1,6 @@
 from aiogram import types, Dispatcher
 from aiogram.dispatcher import FSMContext
+from sqlalchemy import delete
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import async_session
@@ -8,6 +9,7 @@ from states import GameStates
 from questions import questions
 from keyboards import get_keyboard
 from messages import MESSAGES
+
 
 async def get_or_create_user(tg_id: int, session: AsyncSession):
     result = await session.execute(select(User).where(User.tg_id == tg_id))
@@ -18,6 +20,7 @@ async def get_or_create_user(tg_id: int, session: AsyncSession):
         await session.commit()
         await session.refresh(user)
     return user
+
 
 # Запуск игры
 async def start_game(message: types.Message, state: FSMContext):
@@ -39,6 +42,7 @@ async def start_game(message: types.Message, state: FSMContext):
         q = questions[next_qid]
         await message.answer(q["word"], reply_markup=get_keyboard(q["options"], next_qid))
         await GameStates.waiting_for_answer.set()
+
 
 # Обработка ответа
 async def process_answer(callback: types.CallbackQuery, state: FSMContext):
@@ -72,8 +76,23 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(MESSAGES["game_over"])
         await state.finish()
 
+
+async def reset_progress(message: types.Message, state: FSMContext):
+    async with async_session() as session:
+        user = await get_or_create_user(message.from_user.id, session)
+
+        # Удаляем все ответы пользователя
+        stmt = delete(Answer).where(Answer.user_id == user.id)
+        await session.execute(stmt)
+        await session.commit()
+
+    await state.finish()
+    await message.answer("Ваш прогресс был сброшен. Вы можете начать игру заново.", reply_markup=None)
+
+
 def register_handlers_game(dp: Dispatcher):
     dp.register_message_handler(start_game, lambda m: m.text == "🎮 Быстротест", state="*")
+    dp.register_message_handler(reset_progress, lambda m: m.text == "🔄 Сбросить прогресс", state="*")
     dp.register_callback_query_handler(
         process_answer,
         lambda c: c.data.startswith("answer"),

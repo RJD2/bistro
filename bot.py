@@ -7,7 +7,6 @@ from handlers.game import register_handlers_game
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
-# регистрируем хендлеры
 register_handlers_start(dp)
 register_handlers_game(dp)
 
