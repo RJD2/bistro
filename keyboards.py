@@ -2,15 +2,18 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 
 
 def get_keyboard(options: list, qid: int):
-    kb = InlineKeyboardMarkup(row_width=len(options))
     buttons = [
-        InlineKeyboardButton(opt.title(), callback_data=f"answer:{qid}:{i}")
+        InlineKeyboardButton(text=opt.title(), callback_data=f"answer:{qid}:{i}")
         for i, opt in enumerate(options)
     ]
-    kb.add(*buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=[buttons])
     return kb
 
 
-main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-main_menu.add(KeyboardButton("🎮 Быстротест"))
-main_menu.add(KeyboardButton("🔄 Сбросить прогресс"))
+main_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🎮 Быстротест")],
+        [KeyboardButton(text="🔄 Сбросить прогресс")]
+    ],
+    resize_keyboard=True
+)

@@ -1,7 +1,7 @@
 from aiogram import types, Dispatcher
-from aiogram.dispatcher import FSMContext
-from sqlalchemy import delete, func
-from sqlalchemy.future import select
+from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import async_session
 from models import User, Answer, Question
@@ -22,6 +22,8 @@ async def get_or_create_user(tg_id: int, session: AsyncSession):
 
 
 async def start_game(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
     async with async_session() as session:
         user = await get_or_create_user(message.from_user.id, session)
 
@@ -30,17 +32,19 @@ async def start_game(message: types.Message, state: FSMContext):
         answered_ids = {row[0] for row in result.all()}
 
         # Первый неотвеченный вопрос
-        result = await session.execute(select(Question).where(Question.id.not_in(answered_ids)))
+        result = await session.execute(select(Question).where(~Question.id.in_(answered_ids)))
         question = result.scalars().first()
 
         if not question:
             await message.answer(MESSAGES["game_over"])
             return
 
-        await state.update_data(qid=question.id)
+        await session.refresh(question)
+        qid = int(question.id) # type: ignore
+        await state.update_data(qid=qid)
         options = question.options.split(",")
-        await message.answer(question.word, reply_markup=get_keyboard(options, question.id))
-        await GameStates.waiting_for_answer.set()
+        await message.answer(str(question.word), reply_markup=get_keyboard(options, qid))
+        await state.set_state(GameStates.waiting_for_answer)
 
 
 async def get_question_statistics(question_id: int, session: AsyncSession):
@@ -71,6 +75,8 @@ async def get_question_statistics(question_id: int, session: AsyncSession):
 
 
 async def reset_progress(message: types.Message, state: FSMContext):
+    if not message.from_user:
+        return
     async with async_session() as session:
         user = await get_or_create_user(message.from_user.id, session)
 
@@ -79,11 +85,13 @@ async def reset_progress(message: types.Message, state: FSMContext):
         await session.execute(stmt)
         await session.commit()
 
-    await state.finish()
+    await state.clear()
     await message.answer("Ваш прогресс был сброшен. Вы можете начать игру заново.", reply_markup=None)
 
 
 async def process_answer(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.from_user or not callback.data:
+        return
     _, qid, opt = callback.data.split(":")
     qid, opt = int(qid), int(opt)
 
@@ -93,6 +101,8 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         # Сохраняем ответ
         result = await session.execute(select(Question).where(Question.id == qid))
         question = result.scalars().first()
+        if not question:
+            return
         answer = Answer(user_id=user.id, question_id=qid, choice=question.options.split(",")[opt])
         session.add(answer)
         await session.commit()
@@ -106,31 +116,38 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         stats_message += f"{choice}: {percentage:.0f}%\n"
 
     # Убираем кнопки и отправляем статистику
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(f"Вы {question.options.split(',')[opt]}\n\n{stats_message}")
+    if callback.message is not None:
+        await callback.message.edit_text( # type: ignore
+            text=f"Вы ответили на '{question.options.split(',')[opt]}'\n\n{stats_message}",
+            reply_markup=None
+        )
 
     # Ищем следующий вопрос
     async with async_session() as session:
         result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
         answered_ids = {row[0] for row in result.all()}
 
-        result = await session.execute(select(Question).where(Question.id.not_in(answered_ids)))
+        result = await session.execute(select(Question).where(~Question.id.in_(answered_ids)))
         next_question = result.scalars().first()
 
     if next_question:
+        await session.refresh(next_question)
         options = next_question.options.split(",")
-        await state.update_data(qid=next_question.id)
-        await callback.message.answer(next_question.word, reply_markup=get_keyboard(options, next_question.id))
+        next_qid = next_question.id
+        await state.update_data(qid=next_qid)
+        if callback.message is not None:
+            await callback.message.answer(str(next_question.word), reply_markup=get_keyboard(options, next_qid)) # type: ignore
     else:
-        await callback.message.answer(MESSAGES["game_over"])
-        await state.finish()
+        if callback.message is not None:
+            await callback.message.answer(MESSAGES["game_over"])
+        await state.clear()
 
 
 def register_handlers_game(dp: Dispatcher):
-    dp.register_message_handler(start_game, lambda m: m.text == "🎮 Быстротест", state="*")
-    dp.register_message_handler(reset_progress, lambda m: m.text == "🔄 Сбросить прогресс", state="*")
-    dp.register_callback_query_handler(
+    dp.message.register(start_game, lambda m: m.text == "🎮 Быстротест")
+    dp.message.register(reset_progress, lambda m: m.text == "🔄 Сбросить прогресс")
+    dp.callback_query.register(
         process_answer,
         lambda c: c.data.startswith("answer"),
-        state=GameStates.waiting_for_answer
+        StateFilter(GameStates.waiting_for_answer)
     )
