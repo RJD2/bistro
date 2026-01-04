@@ -1,18 +1,23 @@
 import asyncio
+from sqlalchemy.dialects.postgresql import insert
 
 from db import async_session
 from models import Question
 
 
+QUESTIONS = [
+    {"word": "Цезарь", "options": "салат,император"},
+    {"word": "Замок", "options": "слесарь,рыцарь"},
+    {"word": "Камера", "options": "фотограф,велосипедист,преступник"},
+    {"word": "Ультрамарин", "options": "космодесантник,художник"},
+]
+
+
 async def seed_questions():
     async with async_session() as session:
-        questions = [
-            Question(word="Цезарь", options="салат,император"),
-            Question(word="Замок", options="слесарь,рыцарь"),
-            Question(word="Камера", options="фотограф,велосипедист,преступник"),
-            Question(word="Ультрамарин", options="космодесантник,художник")
-        ]
-        session.add_all(questions)
+        stmt = insert(Question).values(QUESTIONS)
+        stmt = stmt.on_conflict_do_nothing(index_elements=["word"])
+        await session.execute(stmt)
         await session.commit()
 
 

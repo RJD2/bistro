@@ -30,5 +30,5 @@ class Question(Base):
     __tablename__ = "questions"
 
     id = Column(Integer, primary_key=True, index=True)
-    word = Column(String, nullable=False)
+    word = Column(String, nullable=False, unique=True)
     options = Column(String, nullable=False)
