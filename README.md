@@ -44,8 +44,8 @@
 После первого запуска, чтобы инициализировать базу данных и добавить вопросы, выполните:
 
 ```bash
-docker-compose exec bot python migrations/init_db.py
-docker-compose exec bot python migrations/add_questions.py
+docker-compose exec bot python -m migrations.init_db
+docker-compose exec bot python -m migrations.add_questions
 ```
 
 Или добавьте эти команды в Dockerfile или entrypoint, если нужно автоматизировать.

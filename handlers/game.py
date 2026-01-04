@@ -131,7 +131,6 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         next_question = result.scalars().first()
 
     if next_question:
-        await session.refresh(next_question)
         options = next_question.options.split(",")
         next_qid = next_question.id
         await state.update_data(qid=next_qid)
