@@ -16,7 +16,7 @@ services:
     build: .
     environment:
       TOKEN: ${TOKEN}
-      DB: postgresql://user:password@postgres:5432/bistro
+      DB: postgresql+asyncpg://user:password@postgres:5432/bistro
     depends_on:
       - postgres
     restart: unless-stopped
