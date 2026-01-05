@@ -47,7 +47,11 @@ async def start_game(message: types.Message, state: FSMContext):
             msg = f"{options[0]} вы или {options[1]}"
         else:
             msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
-        await message.answer(f"{question.word}\n\nЭто был быстротест {msg}", reply_markup=get_keyboard(options, qid))
+        await message.answer(
+            f"*{question.word}*\n\nЭто был быстротест {msg}",
+            parse_mode="MarkdownV2",
+            reply_markup=get_keyboard(options, qid)
+        )
         await state.set_state(GameStates.waiting_for_answer)
 
 
@@ -122,7 +126,8 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
     # Убираем кнопки и отправляем статистику
     if callback.message is not None:
         await callback.message.edit_text( # type: ignore
-            text=f"Вы {question.options.split(',')[opt]}\n\n{stats_message}",
+            text=f"*{question.word}*\n\nЭто был быстротест, вы {question.options.split(',')[opt]}\n\n{stats_message}",
+            parse_mode="MarkdownV2",
             reply_markup=None
         )
 
@@ -143,7 +148,11 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         next_qid = next_question.id
         await state.update_data(qid=next_qid)
         if callback.message is not None:
-            await callback.message.answer(f"{next_question.word}\n\nЭто был быстротест {msg}", reply_markup=get_keyboard(options, next_qid)) # type: ignore
+            await callback.message.answer(
+                f"*{next_question.word}*\n\nЭто был быстротест {msg}",
+                parse_mode="MarkdownV2",
+                reply_markup=get_keyboard(options, next_qid) # type: ignore
+            )
     else:
         if callback.message is not None:
             await callback.message.answer(MESSAGES["game_over"])
