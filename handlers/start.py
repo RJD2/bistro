@@ -2,7 +2,7 @@ from aiogram import types, Dispatcher
 from aiogram.filters import Command
 from messages import MESSAGES
 import config
-import keyboards as kb
+from menus import get_main_menu_for_chat
 
 
 def is_owner_chat(message: types.Message) -> bool:
@@ -17,7 +17,7 @@ def is_owner_chat(message: types.Message) -> bool:
 async def cmd_start(message: types.Message):
     await message.answer(
         MESSAGES["start"],
-        reply_markup=kb.get_main_menu(is_admin=is_owner_chat(message)),
+        reply_markup=await get_main_menu_for_chat(message.chat.id, is_admin=is_owner_chat(message)),
     )
 
 async def cmd_help(message: types.Message):

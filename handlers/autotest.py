@@ -6,6 +6,8 @@ from aiogram.filters import Command
 from sqlalchemy.exc import SQLAlchemyError
 
 from autotest import toggle_group_subscription, toggle_subscription
+from handlers.start import is_owner_chat
+from keyboards import AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON, get_main_menu
 
 
 logger = logging.getLogger(__name__)
@@ -36,9 +38,12 @@ async def toggle_autotest(message: types.Message):
         text = GROUP_AUTOTEST_ENABLED if enabled else GROUP_AUTOTEST_DISABLED
     else:
         text = AUTOTEST_ENABLED if enabled else AUTOTEST_DISABLED
-    await message.answer(text)
+    await message.answer(
+        text,
+        reply_markup=get_main_menu(is_admin=is_owner_chat(message), autotest_enabled=enabled),
+    )
 
 
 def register_handlers_autotest(dp: Dispatcher):
     dp.message.register(toggle_autotest, Command("autotest"))
-    dp.message.register(toggle_autotest, F.text.in_({"Автотест", "⏰ Автотест"}))
+    dp.message.register(toggle_autotest, F.text.in_({"Автотест", AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON}))

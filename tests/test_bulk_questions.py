@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
 from handlers import admin, start
+from keyboards import get_main_menu
 from states import BulkQuestionCreationStates, QuestionCreationStates
 
 
@@ -45,6 +46,14 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         self.database = patch.object(admin, "async_session", self.session_factory)
         self.database.start()
         self.addCleanup(self.database.stop)
+        self.autotest_enabled = False
+        self.menu = AsyncMock(side_effect=lambda chat_id, *, is_admin=False: get_main_menu(
+            is_admin=is_admin, autotest_enabled=self.autotest_enabled,
+        ))
+        for handler in (admin, start):
+            menu_patch = patch.object(handler, "get_main_menu_for_chat", self.menu)
+            menu_patch.start()
+            self.addCleanup(menu_patch.stop)
 
     async def asyncTearDown(self):
         await self.storage.close()
@@ -87,6 +96,7 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         return next(reply for _, _, reply in self.sent if reply.message_id == data["confirmation_message_id"])
 
     async def test_question_order_and_answers_are_collected_before_one_atomic_save(self):
+        self.autotest_enabled = True
         await admin.start_add_questions(self.message("/add_questions"), self.state)
         self.assertEqual(await self.state.get_state(), BulkQuestionCreationStates.waiting_for_words.state)
         await admin.receive_question_words(self.message(" Цезарь , Замок , Камера "), self.state)
@@ -121,6 +131,9 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
         preview.edit_reply_markup.assert_awaited()
+        keyboard = self.sent[-1][1]["reply_markup"]
+        self.assertIn("🚫 Автотест", [button.text for row in keyboard.keyboard for button in row])
+        self.menu.assert_awaited_once_with(OWNER_ID, is_admin=True)
 
         await admin.confirm_add_questions(self.callback(preview), self.state)
         self.session.execute.assert_awaited_once()
@@ -277,6 +290,7 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
                 keyboard = message.answer.call_args.kwargs["reply_markup"]
                 labels = [button.text for row in keyboard.keyboard for button in row]
                 self.assertEqual("📚 Добавить вопросы" in labels, expected)
+                self.assertIn("⏰ Автотест", labels)
 
     async def test_fifty_questions_produce_complete_previews_within_telegram_message_limit(self):
         words = [f"Вопрос {index} " + "🧩" * 20 + "<&>" for index in range(50)]

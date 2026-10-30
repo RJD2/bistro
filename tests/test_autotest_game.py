@@ -148,7 +148,13 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
 
 class AutotestMenuTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_shows_autotest_in_private_and_group_chats(self):
-        with patch.object(config, "ADMIN_ID", USER_ID):
+        session = AsyncMock(spec=AsyncSession)
+        result = MagicMock()
+        result.scalar_one.return_value = False
+        session.execute.return_value = result
+        factory = MagicMock()
+        factory.return_value.__aenter__.return_value = session
+        with patch.object(config, "ADMIN_ID", USER_ID), patch("menus.async_session", factory):
             for user_id, chat_type, visible in (
                 (USER_ID, ChatType.PRIVATE, True),
                 (USER_ID + 1, ChatType.PRIVATE, True),
@@ -158,14 +164,17 @@ class AutotestMenuTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(user_id=user_id, chat_type=chat_type):
                     message = MagicMock(spec=types.Message)
                     message.from_user = SimpleNamespace(id=user_id)
-                    message.chat = SimpleNamespace(type=chat_type)
+                    message.chat = SimpleNamespace(
+                        id=user_id if chat_type == ChatType.PRIVATE else -100123456789,
+                        type=chat_type,
+                    )
                     message.answer = AsyncMock()
 
                     await start.cmd_start(message)
 
                     keyboard = message.answer.call_args.kwargs["reply_markup"]
                     texts = [button.text for row in keyboard.keyboard for button in row]
-                    self.assertEqual("Автотест" in texts, visible)
+                    self.assertEqual("⏰ Автотест" in texts, visible)
 
     async def test_help_explains_daily_subscription_switch_in_private_chat(self):
         message = MagicMock(spec=types.Message)

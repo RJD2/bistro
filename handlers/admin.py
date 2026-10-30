@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import config
 from db import async_session
-from keyboards import get_main_menu
+from menus import get_main_menu_for_chat
 from models import Question
 from states import BulkQuestionCreationStates, QuestionCreationStates
 from text_formatting import capitalize_first
@@ -271,7 +271,7 @@ async def confirm_add_question(callback: types.CallbackQuery, state: FSMContext)
         await _remove_keyboard(callback.message)
         await callback.message.answer(
             "Черновик неполный. Начните заново: /add_question.",
-            reply_markup=get_main_menu(is_admin=True),
+            reply_markup=await get_main_menu_for_chat(callback.message.chat.id, is_admin=True),
         )
         return
 
@@ -299,7 +299,7 @@ async def confirm_add_question(callback: types.CallbackQuery, state: FSMContext)
     await callback.message.answer(
         f"✅ Вопрос «{capitalize_first(word)}» добавлен. Он уже доступен в игре.",
         parse_mode=None,
-        reply_markup=get_main_menu(is_admin=True),
+        reply_markup=await get_main_menu_for_chat(callback.message.chat.id, is_admin=True),
     )
 
 
@@ -310,7 +310,10 @@ async def cancel_add_question(message: types.Message, state: FSMContext):
         return
     await _remove_draft_keyboard(message, await state.get_data())
     await state.clear()
-    await message.answer("Добавление вопроса отменено.", reply_markup=get_main_menu(is_admin=True))
+    await message.answer(
+        "Добавление вопроса отменено.",
+        reply_markup=await get_main_menu_for_chat(message.chat.id, is_admin=True),
+    )
 
 
 async def cancel_question_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -324,7 +327,10 @@ async def cancel_question_callback(callback: types.CallbackQuery, state: FSMCont
     await callback.answer()
     await state.clear()
     await _remove_keyboard(callback.message)
-    await callback.message.answer("Добавление вопроса отменено.", reply_markup=get_main_menu(is_admin=True))
+    await callback.message.answer(
+        "Добавление вопроса отменено.",
+        reply_markup=await get_main_menu_for_chat(callback.message.chat.id, is_admin=True),
+    )
 
 
 async def remind_question_confirmation(message: types.Message, state: FSMContext):
@@ -423,7 +429,7 @@ async def confirm_add_questions(callback: types.CallbackQuery, state: FSMContext
         await _remove_keyboard(callback.message)
         await callback.message.answer(
             "Черновик списка неполный. Начните заново: /add_questions.",
-            reply_markup=get_main_menu(is_admin=True),
+            reply_markup=await get_main_menu_for_chat(callback.message.chat.id, is_admin=True),
         )
         return
 
@@ -453,7 +459,7 @@ async def confirm_add_questions(callback: types.CallbackQuery, state: FSMContext
     await callback.message.answer(
         f"✅ Добавлено вопросов: {added_count}.\n"
         f"Пропущено существующих: {len(questions) - added_count}.",
-        reply_markup=get_main_menu(is_admin=True),
+        reply_markup=await get_main_menu_for_chat(callback.message.chat.id, is_admin=True),
     )
 
 
@@ -466,7 +472,7 @@ async def cancel_add_questions(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Массовое добавление отменено. Вопросы не сохранены.",
-        reply_markup=get_main_menu(is_admin=True),
+        reply_markup=await get_main_menu_for_chat(message.chat.id, is_admin=True),
     )
 
 
@@ -488,7 +494,7 @@ async def cancel_bulk_callback(callback: types.CallbackQuery, state: FSMContext)
     await _remove_keyboard(callback.message)
     await callback.message.answer(
         "Массовое добавление отменено. Вопросы не сохранены.",
-        reply_markup=get_main_menu(is_admin=True),
+        reply_markup=await get_main_menu_for_chat(callback.message.chat.id, is_admin=True),
     )
 
 

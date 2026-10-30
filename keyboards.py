@@ -3,6 +3,10 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from text_formatting import capitalize_first
 
 
+AUTOTEST_OFF_BUTTON = "⏰ Автотест"
+AUTOTEST_ON_BUTTON = "🚫 Автотест"
+
+
 def get_keyboard(options: list, qid: int, *, callback_prefix: str = "answer"):
     buttons = [
         InlineKeyboardButton(text=capitalize_first(opt), callback_data=f"{callback_prefix}:{qid}:{i}")
@@ -12,10 +16,10 @@ def get_keyboard(options: list, qid: int, *, callback_prefix: str = "answer"):
     return kb
 
 
-def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+def get_main_menu(is_admin: bool = False, *, autotest_enabled: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="🎮 Быстротест")],
-        [KeyboardButton(text="Автотест")],
+        [KeyboardButton(text=AUTOTEST_ON_BUTTON if autotest_enabled else AUTOTEST_OFF_BUTTON)],
         [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="🔄 Сбросить прогресс")]
     ]

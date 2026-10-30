@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
 from handlers import admin, game, start
+from keyboards import get_main_menu
 from models import Question
 from states import QuestionCreationStates
 
@@ -69,6 +70,14 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         self.database = patch.object(admin, "async_session", self.session_factory)
         self.database.start()
         self.addCleanup(self.database.stop)
+        self.autotest_enabled = False
+        self.menu = AsyncMock(side_effect=lambda chat_id, *, is_admin=False: get_main_menu(
+            is_admin=is_admin, autotest_enabled=self.autotest_enabled,
+        ))
+        for handler in (admin, start):
+            menu_patch = patch.object(handler, "get_main_menu_for_chat", self.menu)
+            menu_patch.start()
+            self.addCleanup(menu_patch.stop)
 
     async def asyncTearDown(self):
         await self.storage.close()
@@ -116,6 +125,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         self.session_factory.assert_not_called()
 
     async def test_owner_confirms_escaped_preview_and_saves_only_once(self):
+        self.autotest_enabled = True
         preview, source = await self.prepare_draft(
             word="камера NASA & <тест>", options=" фотограф SQL , ВЕЛОСИПЕДИСТ , прЕступник "
         )
@@ -140,6 +150,9 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
         preview.edit_reply_markup.assert_awaited()
+        keyboard = preview.answer.call_args.kwargs["reply_markup"]
+        self.assertIn("🚫 Автотест", [button.text for row in keyboard.keyboard for button in row])
+        self.menu.assert_awaited_once_with(OWNER_ID, is_admin=True)
 
         await admin.confirm_add_question(event, self.state)
         self.session.execute.assert_awaited_once()
@@ -230,6 +243,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
                 keyboard = event.answer.call_args.kwargs["reply_markup"]
                 texts = [button.text for row in keyboard.keyboard for button in row]
                 self.assertEqual(admin.ADD_QUESTION_BUTTON in texts, expected)
+                self.assertIn("⏰ Автотест", texts)
 
     async def test_concurrent_confirmation_updates_save_once_and_leave_no_draft(self):
         spec = importlib.util.spec_from_file_location(

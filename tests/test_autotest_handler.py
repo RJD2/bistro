@@ -85,7 +85,7 @@ class AutotestHandlerTests(unittest.IsolatedAsyncioTestCase):
         ))
 
     async def test_button_and_command_toggle_and_report_both_states(self):
-        for text in ("Автотест", "⏰ Автотест", "/autotest"):
+        for text in ("Автотест", "⏰ Автотест", "🚫 Автотест", "/autotest"):
             with self.subTest(text=text):
                 self.toggle.reset_mock(side_effect=True)
                 self.toggle.side_effect = [True, False]
@@ -102,6 +102,9 @@ class AutotestHandlerTests(unittest.IsolatedAsyncioTestCase):
                     "Автотест отключён. Вы больше не будете получать ежедневные Быстротесты.",
                 ])
                 self.assertTrue(all(method.chat_id == USER_ID for method in self.transport.requests))
+                self.assertEqual([
+                    method.reply_markup.keyboard[1][0].text for method in self.transport.requests
+                ], ["🚫 Автотест", "⏰ Автотест"])
 
     async def test_group_button_and_command_toggle_one_shared_schedule_for_different_members(self):
         for chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):
