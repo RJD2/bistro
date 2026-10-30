@@ -14,6 +14,7 @@ from db import async_session
 from keyboards import get_main_menu
 from models import Question
 from states import BulkQuestionCreationStates, QuestionCreationStates
+from text_formatting import capitalize_first
 
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ def _validate_bulk_draft(data: dict, *, complete: bool) -> tuple[list[str], list
 
 def _bulk_options_prompt(words: list[str], index: int) -> str:
     return (
-        f"Вопрос {index + 1} из {len(words)}: «{words[index]}»\n\n"
+        f"Вопрос {index + 1} из {len(words)}: «{capitalize_first(words[index])}»\n\n"
         "Отправьте от 2 до 8 вариантов ответа через запятую, каждый до 64 символов.\n"
         "Для отмены всего списка — /cancel."
     )
@@ -140,8 +141,8 @@ def _bulk_preview_chunks(questions: list[dict]) -> list[str]:
     current = "Проверьте вопросы и варианты ответа:\n\n"
     for index, question in enumerate(questions, 1):
         section = (
-            f"{index}. {question['word']}\n"
-            + "\n".join(f"   • {option}" for option in question["options"])
+            f"{index}. {capitalize_first(question['word'])}\n"
+            + "\n".join(f"   • {capitalize_first(option)}" for option in question["options"])
             + "\n\n"
         )
         # Telegram считает длину сообщения в кодовых единицах UTF-16.
@@ -225,8 +226,8 @@ async def receive_question_options(message: types.Message, state: FSMContext):
         types.InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_CALLBACK),
     ]])
     preview = await message.answer(
-        f"<b>{escape(word)}</b>\n\nВарианты ответа:\n"
-        + "\n".join(f"{index}. {escape(option)}" for index, option in enumerate(options, 1))
+        f"<b>{escape(capitalize_first(word))}</b>\n\nВарианты ответа:\n"
+        + "\n".join(f"{index}. {escape(capitalize_first(option))}" for index, option in enumerate(options, 1))
         + "\n\nДобавить этот вопрос?",
         parse_mode="HTML",
         reply_markup=keyboard,
@@ -296,7 +297,7 @@ async def confirm_add_question(callback: types.CallbackQuery, state: FSMContext)
         await callback.message.answer("Вопрос с таким названием уже есть. Отправьте другое название или /cancel.")
         return
     await callback.message.answer(
-        f"✅ Вопрос «{word}» добавлен. Он уже доступен в игре.",
+        f"✅ Вопрос «{capitalize_first(word)}» добавлен. Он уже доступен в игре.",
         parse_mode=None,
         reply_markup=get_main_menu(is_admin=True),
     )

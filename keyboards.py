@@ -1,9 +1,11 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
+from text_formatting import capitalize_first
+
 
 def get_keyboard(options: list, qid: int):
     buttons = [
-        InlineKeyboardButton(text=opt.title(), callback_data=f"answer:{qid}:{i}")
+        InlineKeyboardButton(text=capitalize_first(opt), callback_data=f"answer:{qid}:{i}")
         for i, opt in enumerate(options)
     ]
     kb = InlineKeyboardMarkup(inline_keyboard=[buttons])

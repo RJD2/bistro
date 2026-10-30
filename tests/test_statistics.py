@@ -9,6 +9,7 @@ os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from PIL import Image
+from matplotlib.patches import Patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from handlers import game
@@ -53,6 +54,18 @@ class QuestionStatisticsTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatisticsChartTests(unittest.TestCase):
+    def test_legend_capitalizes_labels_without_changing_statistics_or_acronyms(self):
+        statistics = {"плотник": 0.0, "военачальник NASA": 100.0, "проводник SQL": 0.0}
+        original = statistics.copy()
+        with patch("statistics_chart.Patch", wraps=Patch) as legend_patch:
+            render_statistics_chart(statistics)
+
+        self.assertEqual(
+            [call.kwargs["label"] for call in legend_patch.call_args_list],
+            ["Плотник: 0%", "Военачальник NASA: 100%", "Проводник SQL: 0%"],
+        )
+        self.assertEqual(statistics, original)
+
     def test_chart_is_a_valid_png_for_normal_and_empty_statistics(self):
         cases = (
             {"фотограф": 50.0, "велосипедист": 30.0, "преступник": 20.0},
@@ -114,12 +127,12 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         return session, message, state, png
 
     async def test_result_contains_chart_and_text_before_game_finishes(self):
-        question = Question(id=1, word="Камера & <тест>", options="фотограф & художник,велосипедист")
-        statistics = {"фотограф & художник": 75.0, "велосипедист": 25.0}
+        question = Question(id=1, word="камера NASA & <тест>", options="фотограф SQL & художник,велосипедист")
+        statistics = {"фотограф SQL & художник": 75.0, "велосипедист": 25.0}
         session, message, state, png = await self.process(question, statistics)
 
         saved_answer = session.add.call_args.args[0]
-        self.assertEqual(saved_answer.choice, "фотограф & художник")
+        self.assertEqual(saved_answer.choice, "фотограф SQL & художник")
         self.assertEqual(saved_answer.question_id, 1)
         message.edit_media.assert_awaited_once()
         media = message.edit_media.call_args.kwargs["media"]
@@ -127,18 +140,19 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(media.media, types.BufferedInputFile)
         self.assertEqual(media.media.data, png)
         self.assertEqual(media.parse_mode, "HTML")
-        self.assertIn("Камера &amp; &lt;тест&gt;", media.caption)
-        self.assertIn("фотограф &amp; художник: 75%", media.caption)
-        self.assertIn("велосипедист: 25%", media.caption)
+        self.assertIn("Камера NASA &amp; &lt;тест&gt;", media.caption)
+        self.assertIn("вы Фотограф SQL &amp; художник", media.caption)
+        self.assertIn("Фотограф SQL &amp; художник: 75%", media.caption)
+        self.assertIn("Велосипедист: 25%", media.caption)
         self.assertIsNone(message.edit_media.call_args.kwargs["reply_markup"])
         message.answer.assert_awaited_once_with(game.MESSAGES["game_over"])
         state.clear.assert_awaited_once()
 
     async def test_long_statistics_keep_full_text_and_chart_then_show_next_question(self):
         choice = "длинный вариант " * 70
-        question = Question(id=1, word="Камера", options=f"{choice},велосипедист")
+        question = Question(id=1, word="камера NASA", options=f"{choice},велосипедист")
         statistics = {choice: 100.0, "велосипедист": 0.0}
-        next_question = Question(id=2, word="Замок", options="слесарь,рыцарь")
+        next_question = Question(id=2, word="замок SQL", options="слесарь NASA,рыцарь")
 
         _, message, state, png = await self.process(question, statistics, next_question)
 
@@ -146,17 +160,21 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         message.edit_text.assert_awaited_once()
         text = message.edit_text.call_args.kwargs["text"]
         self.assertGreater(len(text), 1024)
-        self.assertIn(f"{choice}: 100%", text)
-        self.assertIn("велосипедист: 0%", text)
+        self.assertIn(f"Д{choice[1:].strip()}: 100%", text)
+        self.assertIn("Велосипедист: 0%", text)
         self.assertIsNone(message.edit_text.call_args.kwargs["reply_markup"])
         message.answer_photo.assert_awaited_once()
         self.assertEqual(message.answer_photo.call_args.kwargs["photo"].data, png)
+        self.assertEqual(message.answer_photo.call_args.kwargs["caption"], "📊 Камера NASA")
         state.update_data.assert_awaited_once_with(qid=2)
         state.clear.assert_not_awaited()
         message.answer.assert_awaited_once()
-        self.assertIn("Замок", message.answer.call_args.args[0])
+        self.assertIn("Замок SQL", message.answer.call_args.args[0])
+        self.assertIn("Слесарь NASA", message.answer.call_args.args[0])
+        self.assertIn("Рыцарь", message.answer.call_args.args[0])
         keyboard = message.answer.call_args.kwargs["reply_markup"]
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:2:0")
+        self.assertEqual([button.text for button in keyboard.inline_keyboard[0]], ["Слесарь NASA", "Рыцарь"])
 
 
 if __name__ == "__main__":

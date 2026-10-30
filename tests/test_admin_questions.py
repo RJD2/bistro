@@ -116,10 +116,15 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         self.session_factory.assert_not_called()
 
     async def test_owner_confirms_escaped_preview_and_saves_only_once(self):
-        preview, source = await self.prepare_draft()
+        preview, source = await self.prepare_draft(
+            word="камера NASA & <тест>", options=" фотограф SQL , велосипедист , преступник "
+        )
         self.session.execute.assert_not_awaited()
         preview_text = source.answer.call_args.args[0]
-        self.assertIn("Камера &amp; &lt;тест&gt;", preview_text)
+        self.assertIn("Камера NASA &amp; &lt;тест&gt;", preview_text)
+        self.assertIn("1. Фотограф SQL", preview_text)
+        self.assertIn("2. Велосипедист", preview_text)
+        self.assertIn("3. Преступник", preview_text)
         self.assertEqual(source.answer.call_args.kwargs["parse_mode"], "HTML")
 
         event = callback(preview)
@@ -128,8 +133,9 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         self.session.execute.assert_awaited_once()
         statement = self.session.execute.call_args.args[0]
         values = statement.compile(dialect=postgresql.dialect()).params
-        self.assertEqual(values["word"], "Камера & <тест>")
-        self.assertEqual(values["options"], "фотограф,велосипедист,преступник")
+        self.assertEqual(values["word"], "камера NASA & <тест>")
+        self.assertEqual(values["options"], "фотограф SQL,велосипедист,преступник")
+        self.assertIn("Камера NASA & <тест>", preview.answer.call_args.args[0])
         self.session.commit.assert_awaited_once()
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
@@ -300,7 +306,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
 
 class AddedQuestionRenderingTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_question_with_markup_characters_is_displayed_as_text(self):
-        question = Question(id=12, word="Замок <&> _тест_?", options="рыцарь & маг,слесарь <мастер>")
+        question = Question(id=12, word="замок NASA <&> _тест_?", options="рыцарь SQL & маг,слесарь <мастер>")
         session = AsyncMock(spec=AsyncSession)
         answered = MagicMock()
         answered.all.return_value = []
@@ -318,9 +324,15 @@ class AddedQuestionRenderingTests(unittest.IsolatedAsyncioTestCase):
             await game.start_game(event, state)
         text = event.answer.call_args.args[0]
         self.assertEqual(event.answer.call_args.kwargs["parse_mode"], "HTML")
-        self.assertIn("Замок &lt;&amp;&gt; _тест_?", text)
-        self.assertIn("рыцарь &amp; маг", text)
-        self.assertIn("слесарь &lt;мастер&gt;", text)
+        self.assertIn("Замок NASA &lt;&amp;&gt; _тест_?", text)
+        self.assertIn("Рыцарь SQL &amp; маг", text)
+        self.assertIn("Слесарь &lt;мастер&gt;", text)
+        keyboard = event.answer.call_args.kwargs["reply_markup"]
+        self.assertEqual(
+            [button.text for button in keyboard.inline_keyboard[0]],
+            ["Рыцарь SQL & маг", "Слесарь <мастер>"],
+        )
+        self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:12:0")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from states import GameStates
 from keyboards import get_keyboard
 from messages import MESSAGES
 from statistics_chart import render_statistics_chart
+from text_formatting import capitalize_first
 
 
 async def get_or_create_user(tg_id: int, session: AsyncSession):
@@ -47,14 +48,15 @@ async def start_game(message: types.Message, state: FSMContext):
         qid = int(question.id) # type: ignore
         await state.update_data(qid=qid)
         options = question.options.split(",")
+        display_options = [capitalize_first(option) for option in options]
         if len(options) == 2:
-            msg = f"{options[0]} вы или {options[1]}"
+            msg = f"{display_options[0]} вы или {display_options[1]}"
         else:
-            msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
+            msg = f"{display_options[0]} вы, {", ".join(display_options[1:-1])} или {display_options[-1]}"
         await message.answer(
-            f"<b>{escape(question.word)}</b>\n\nЭто был быстротест {escape(msg)}",
+            f"<b>{escape(capitalize_first(question.word))}</b>\n\nЭто был быстротест {escape(msg)}",
             parse_mode="HTML",
-            reply_markup=get_keyboard(options, qid)
+            reply_markup=get_keyboard(options, qid),
         )
         await state.set_state(GameStates.waiting_for_answer)
 
@@ -126,11 +128,11 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
 
     # Формируем сообщение со статистикой
     stats_message = "📊 Статистика ответов:\n" + "\n".join(
-        f"{escape(choice)}: {percentage:.0f}%" for choice, percentage in stats.items()
+        f"{escape(capitalize_first(choice))}: {percentage:.0f}%" for choice, percentage in stats.items()
     )
     caption = (
-        f"<b>{escape(question.word)}</b>\n\n"
-        f"Это был быстротест, вы {escape(question.options.split(',')[opt])}\n\n"
+        f"<b>{escape(capitalize_first(question.word))}</b>\n\n"
+        f"Это был быстротест, вы {escape(capitalize_first(question.options.split(',')[opt]))}\n\n"
         f"{stats_message}"
     )
     chart = await to_thread(render_statistics_chart, stats)
@@ -147,7 +149,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         await message.edit_text(text=caption, parse_mode="HTML", reply_markup=None)
         await message.answer_photo(
             photo=photo,
-            caption=f"📊 {question.word}",
+            caption=f"📊 {capitalize_first(question.word)}",
             parse_mode=None,
         )
 
@@ -161,14 +163,15 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
 
     if next_question:
         options = next_question.options.split(",")
+        display_options = [capitalize_first(option) for option in options]
         if len(options) == 2:
-            msg = f"{options[0]} вы или {options[1]}"
+            msg = f"{display_options[0]} вы или {display_options[1]}"
         else:
-            msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
+            msg = f"{display_options[0]} вы, {", ".join(display_options[1:-1])} или {display_options[-1]}"
         next_qid = next_question.id
         await state.update_data(qid=next_qid)
         await message.answer(
-            f"<b>{escape(next_question.word)}</b>\n\nЭто был быстротест {escape(msg)}",
+            f"<b>{escape(capitalize_first(next_question.word))}</b>\n\nЭто был быстротест {escape(msg)}",
             parse_mode="HTML",
             reply_markup=get_keyboard(options, next_qid) # type: ignore
         )
