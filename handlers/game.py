@@ -119,33 +119,30 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         question = result.scalars().first()
         if not question:
             return
-        answer = Answer(user_id=user.id, question_id=qid, choice=question.options.split(",")[opt])
+        selected_choice = question.options.split(",")[opt]
+        answer = Answer(user_id=user.id, question_id=qid, choice=selected_choice)
         session.add(answer)
         await session.commit()
 
         # Получаем статистику по текущему вопросу
         stats = await get_question_statistics(qid, session)
 
-    # Формируем сообщение со статистикой
-    stats_message = "📊 Статистика ответов:\n" + "\n".join(
-        f"{escape(capitalize_first(choice))}: {percentage:.0f}%" for choice, percentage in stats.items()
-    )
+    # Формируем подпись с выбранным ответом.
     caption = (
         f"<b>{escape(capitalize_first(question.word))}</b>\n\n"
-        f"Это был быстротест, вы {escape(capitalize_first(question.options.split(',')[opt]))}\n\n"
-        f"{stats_message}"
+        f"Это был быстротест, вы {escape(selected_choice)}"
     )
     chart = await to_thread(render_statistics_chart, stats)
     photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
 
-    # Заменяем вопрос диаграммой с текстовой статистикой и убираем кнопки.
+    # Заменяем вопрос диаграммой с выбранным ответом и убираем кнопки.
     if len(caption) <= 1024:
         await message.edit_media(
             media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
             reply_markup=None,
         )
     else:
-        # Длинная статистика не поместится в подпись к фото Telegram.
+        # Длинный результат не поместится в подпись к фото Telegram.
         await message.edit_text(text=caption, parse_mode="HTML", reply_markup=None)
         await message.answer_photo(
             photo=photo,

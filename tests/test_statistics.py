@@ -1,5 +1,6 @@
 import os
 import unittest
+from html import escape
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -119,36 +120,42 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
             patch.object(game, "async_session", session_factory),
             patch.object(game, "get_or_create_user", AsyncMock(return_value=SimpleNamespace(id=7))),
             patch.object(game, "get_question_statistics", side_effect=get_saved_statistics),
-            patch.object(game, "render_statistics_chart", return_value=png),
+            patch.object(game, "render_statistics_chart", return_value=png) as renderer,
         ):
             await game.process_answer(callback, state)
+            renderer.assert_called_once_with(statistics)
 
         callback.answer.assert_awaited_once()
         return session, message, state, png
 
-    async def test_result_contains_chart_and_text_before_game_finishes(self):
-        question = Question(id=1, word="камера NASA & <тест>", options="фотограф SQL & художник,велосипедист")
-        statistics = {"фотограф SQL & художник": 75.0, "велосипедист": 25.0}
-        session, message, state, png = await self.process(question, statistics)
+    async def test_result_contains_chart_and_exact_selected_choice_without_duplicate_statistics(self):
+        for choice in ("фотограф SQL & художник", "ФОТОГРАФ SQL & художник", "фОтоГраф SQL & художник"):
+            with self.subTest(choice=choice):
+                question = Question(id=1, word="камера NASA & <тест>", options=f"{choice},велосипедист")
+                statistics = {choice: 75.0, "велосипедист": 25.0}
+                session, message, state, png = await self.process(question, statistics)
 
-        saved_answer = session.add.call_args.args[0]
-        self.assertEqual(saved_answer.choice, "фотограф SQL & художник")
-        self.assertEqual(saved_answer.question_id, 1)
-        message.edit_media.assert_awaited_once()
-        media = message.edit_media.call_args.kwargs["media"]
-        self.assertIsInstance(media, types.InputMediaPhoto)
-        self.assertIsInstance(media.media, types.BufferedInputFile)
-        self.assertEqual(media.media.data, png)
-        self.assertEqual(media.parse_mode, "HTML")
-        self.assertIn("Камера NASA &amp; &lt;тест&gt;", media.caption)
-        self.assertIn("вы Фотограф SQL &amp; художник", media.caption)
-        self.assertIn("Фотограф SQL &amp; художник: 75%", media.caption)
-        self.assertIn("Велосипедист: 25%", media.caption)
-        self.assertIsNone(message.edit_media.call_args.kwargs["reply_markup"])
-        message.answer.assert_awaited_once_with(game.MESSAGES["game_over"])
-        state.clear.assert_awaited_once()
+                saved_answer = session.add.call_args.args[0]
+                self.assertEqual(saved_answer.choice, choice)
+                self.assertEqual(saved_answer.question_id, 1)
+                message.edit_media.assert_awaited_once()
+                media = message.edit_media.call_args.kwargs["media"]
+                self.assertIsInstance(media, types.InputMediaPhoto)
+                self.assertIsInstance(media.media, types.BufferedInputFile)
+                self.assertEqual(media.media.data, png)
+                self.assertEqual(media.parse_mode, "HTML")
+                self.assertEqual(
+                    media.caption,
+                    "<b>Камера NASA &amp; &lt;тест&gt;</b>\n\n"
+                    f"Это был быстротест, вы {escape(choice)}",
+                )
+                self.assertNotIn("Статистика ответов", media.caption)
+                self.assertNotIn("%", media.caption)
+                self.assertIsNone(message.edit_media.call_args.kwargs["reply_markup"])
+                message.answer.assert_awaited_once_with(game.MESSAGES["game_over"])
+                state.clear.assert_awaited_once()
 
-    async def test_long_statistics_keep_full_text_and_chart_then_show_next_question(self):
+    async def test_long_selected_choice_keeps_exact_text_and_chart_then_shows_next_question(self):
         choice = "длинный вариант " * 70
         question = Question(id=1, word="камера NASA", options=f"{choice},велосипедист")
         statistics = {choice: 100.0, "велосипедист": 0.0}
@@ -160,8 +167,9 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         message.edit_text.assert_awaited_once()
         text = message.edit_text.call_args.kwargs["text"]
         self.assertGreater(len(text), 1024)
-        self.assertIn(f"Д{choice[1:].strip()}: 100%", text)
-        self.assertIn("Велосипедист: 0%", text)
+        self.assertEqual(text, f"<b>Камера NASA</b>\n\nЭто был быстротест, вы {choice}")
+        self.assertNotIn("Статистика ответов", text)
+        self.assertNotIn("%", text)
         self.assertIsNone(message.edit_text.call_args.kwargs["reply_markup"])
         message.answer_photo.assert_awaited_once()
         self.assertEqual(message.answer_photo.call_args.kwargs["photo"].data, png)
