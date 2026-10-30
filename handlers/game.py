@@ -1,3 +1,6 @@
+from asyncio import to_thread
+from html import escape
+
 from aiogram import types, Dispatcher
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
@@ -8,6 +11,7 @@ from models import User, Answer, Question
 from states import GameStates
 from keyboards import get_keyboard
 from messages import MESSAGES
+from statistics_chart import render_statistics_chart
 
 
 async def get_or_create_user(tg_id: int, session: AsyncSession):
@@ -55,16 +59,7 @@ async def start_game(message: types.Message, state: FSMContext):
         await state.set_state(GameStates.waiting_for_answer)
 
 
-async def get_question_statistics(question_id: int, session: AsyncSession):
-    # Подсчет общего количества ответов
-    total_answers = await session.execute(
-        select(func.count()).select_from(Answer).where(Answer.question_id == question_id)
-    )
-    total_count = total_answers.scalar() or 0
-
-    if total_count == 0:
-        return {}
-
+async def get_question_statistics(question_id: int, session: AsyncSession) -> dict[str, float]:
     # Подсчет количества ответов для каждого варианта
     result = await session.execute(
         select(Answer.choice, func.count(Answer.choice))
@@ -72,6 +67,15 @@ async def get_question_statistics(question_id: int, session: AsyncSession):
         .group_by(Answer.choice)
     )
     choices_count = {row[0]: row[1] for row in result.all()}
+    total_count = sum(choices_count.values())
+
+    if total_count == 0:
+        return {}
+
+    # Сохраняем порядок вариантов, включая те, которые еще никто не выбрал.
+    question = await session.get(Question, question_id)
+    if question is not None:
+        choices_count = {**dict.fromkeys(question.options.split(","), 0), **choices_count}
 
     # Вычисление процентов
     percentages = {
@@ -98,8 +102,10 @@ async def reset_progress(message: types.Message, state: FSMContext):
 
 
 async def process_answer(callback: types.CallbackQuery, state: FSMContext):
-    if not callback.from_user or not callback.data:
+    if not callback.from_user or not callback.data or not isinstance(callback.message, types.Message):
         return
+    await callback.answer()
+    message = callback.message
     _, qid, opt = callback.data.split(":")
     qid, opt = int(qid), int(opt)
 
@@ -119,16 +125,30 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         stats = await get_question_statistics(qid, session)
 
     # Формируем сообщение со статистикой
-    stats_message = "📊 Статистика ответов:\n"
-    for choice, percentage in stats.items():
-        stats_message += f"{choice}: {percentage:.0f}%\n"
+    stats_message = "📊 Статистика ответов:\n" + "\n".join(
+        f"{escape(choice)}: {percentage:.0f}%" for choice, percentage in stats.items()
+    )
+    caption = (
+        f"<b>{escape(question.word)}</b>\n\n"
+        f"Это был быстротест, вы {escape(question.options.split(',')[opt])}\n\n"
+        f"{stats_message}"
+    )
+    chart = await to_thread(render_statistics_chart, stats)
+    photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
 
-    # Убираем кнопки и отправляем статистику
-    if callback.message is not None:
-        await callback.message.edit_text( # type: ignore
-            text=f"*{question.word}*\n\nЭто был быстротест, вы {question.options.split(',')[opt]}\n\n{stats_message}",
-            parse_mode="MarkdownV2",
-            reply_markup=None
+    # Заменяем вопрос диаграммой с текстовой статистикой и убираем кнопки.
+    if len(caption) <= 1024:
+        await message.edit_media(
+            media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
+            reply_markup=None,
+        )
+    else:
+        # Длинная статистика не поместится в подпись к фото Telegram.
+        await message.edit_text(text=caption, parse_mode="HTML", reply_markup=None)
+        await message.answer_photo(
+            photo=photo,
+            caption=f"📊 {question.word}",
+            parse_mode=None,
         )
 
     # Ищем следующий вопрос
@@ -147,15 +167,13 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
         next_qid = next_question.id
         await state.update_data(qid=next_qid)
-        if callback.message is not None:
-            await callback.message.answer(
-                f"*{next_question.word}*\n\nЭто был быстротест {msg}",
-                parse_mode="MarkdownV2",
-                reply_markup=get_keyboard(options, next_qid) # type: ignore
-            )
+        await message.answer(
+            f"*{next_question.word}*\n\nЭто был быстротест {msg}",
+            parse_mode="MarkdownV2",
+            reply_markup=get_keyboard(options, next_qid) # type: ignore
+        )
     else:
-        if callback.message is not None:
-            await callback.message.answer(MESSAGES["game_over"])
+        await message.answer(MESSAGES["game_over"])
         await state.clear()
 
 
