@@ -184,7 +184,7 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:2:0")
         self.assertEqual(
             [button.text for row in keyboard.inline_keyboard for button in row],
-            ["слесарь NASA & мастер", "рЫцарь SQL"],
+            ["Слесарь NASA & мастер", "РЫцарь SQL"],
         )
 
 
