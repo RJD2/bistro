@@ -18,6 +18,7 @@ from models import (
     Answer, AutotestDelivery, AutotestSubscription, GroupAutotestDelivery,
     GroupAutotestSubscription, Question, User,
 )
+from questions import next_available_question, question_choices
 
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ async def _send_question(bot: Bot, chat_id: int, question: Question) -> tuple[bo
             text=question_text(question),
             parse_mode="HTML",
             reply_markup=get_keyboard(
-                question.options.split(","), question.id,
+                question_choices(question), question.id,
                 callback_prefix="autotest_answer",
             ),
             request_timeout=20,
@@ -117,13 +118,9 @@ async def send_one_due_autotest(bot: Bot, *, now: datetime | None = None) -> boo
         delivered = select(AutotestDelivery.question_id).where(
             AutotestDelivery.user_id == subscription.user_id
         )
-        result = await session.execute(
-            select(Question)
-            .where(~Question.id.in_(answered), ~Question.id.in_(delivered))
-            .order_by(Question.id)
-            .limit(1)
+        question = await next_available_question(
+            session, ~Question.id.in_(answered), ~Question.id.in_(delivered),
         )
-        question = result.scalars().first()
         if question is None:
             # Leave the subscription active for questions added in the future.
             subscription.next_send_at = now + DAY
@@ -154,10 +151,7 @@ async def send_one_due_group_autotest(bot: Bot, *, now: datetime | None = None) 
         delivered = select(GroupAutotestDelivery.question_id).where(
             GroupAutotestDelivery.chat_id == subscription.chat_id
         )
-        result = await session.execute(
-            select(Question).where(~Question.id.in_(delivered)).order_by(Question.id).limit(1)
-        )
-        question = result.scalars().first()
+        question = await next_available_question(session, ~Question.id.in_(delivered))
         if question is None:
             subscription.next_send_at = now + DAY
         else:

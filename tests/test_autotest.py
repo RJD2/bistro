@@ -103,7 +103,7 @@ class AutotestDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.subscription = AutotestSubscription(
             user_id=USER_ID, next_send_at=NOW - timedelta(hours=1),
         )
-        self.question = Question(id=8, word="камера & SQL", options="фотограф,преступник")
+        self.question = Question(id=8, word="камера & SQL", options="фотограф,преступник", associo="снимок,тюрьма")
         self.patches = [
             patch.object(autotest, "async_session", factory),
             patch.object(autotest, "utc_now", return_value=NOW),
@@ -149,6 +149,12 @@ class AutotestDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["chat_id"], TG_ID)
         self.assertEqual(kwargs["parse_mode"], "HTML")
         self.assertIn("Камера &amp; SQL", kwargs["text"])
+        self.assertNotIn("фотограф", kwargs["text"])
+        self.assertNotIn("преступник", kwargs["text"])
+        self.assertEqual(
+            [row[0].text for row in kwargs["reply_markup"].inline_keyboard],
+            ["Снимок", "Тюрьма"],
+        )
         self.assertEqual(
             [row[0].callback_data for row in kwargs["reply_markup"].inline_keyboard],
             ["autotest_answer:8:0", "autotest_answer:8:1"],
@@ -166,6 +172,7 @@ class AutotestDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("autotest_deliveries.question_id", query_text)
         self.assertIn("answers.user_id =", query_text)
         self.assertIn("autotest_deliveries.user_id =", query_text)
+        self.assertIn("questions.associo", query_text.partition("WHERE")[2])
         self.assertIn(USER_ID, query.params.values())
         self.assertTrue("NOT IN" in query_text or "NOT (EXISTS" in query_text)
 

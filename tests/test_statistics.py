@@ -137,7 +137,7 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
     async def test_result_contains_chart_and_exact_selected_choice_without_duplicate_statistics(self):
         for choice in ("фотограф SQL & художник", "ФОТОГРАФ SQL & художник", "фОтоГраф SQL & художник"):
             with self.subTest(choice=choice):
-                question = Question(id=1, word="камера NASA & <тест>", options=f"{choice},велосипедист")
+                question = Question(id=1, word="камера NASA & <тест>", options=f"{choice},велосипедист", associo="снимок,колесо")
                 statistics = {choice: 75.0, "велосипедист": 25.0}
                 session, message, state, png = await self.process(question, statistics)
 
@@ -163,9 +163,9 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_long_selected_choice_keeps_exact_text_and_chart_then_shows_next_question(self):
         choice = "длинный вариант " * 70
-        question = Question(id=1, word="камера NASA", options=f"{choice},велосипедист")
+        question = Question(id=1, word="камера NASA", options=f"{choice},велосипедист", associo="снимок,колесо")
         statistics = {choice: 100.0, "велосипедист": 0.0}
-        next_question = Question(id=2, word="замок SQL", options="слесарь NASA & мастер,рЫцарь SQL")
+        next_question = Question(id=2, word="замок SQL", options="слесарь NASA & мастер,рЫцарь SQL", associo="ключ & дверь,башня SQL")
 
         _, message, state, png = await self.process(question, statistics, next_question)
 
@@ -184,13 +184,14 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         state.clear.assert_not_awaited()
         message.answer.assert_awaited_once()
         self.assertIn("Замок SQL", message.answer.call_args.args[0])
-        self.assertIn("слесарь NASA &amp; мастер", message.answer.call_args.args[0])
-        self.assertIn("рЫцарь SQL", message.answer.call_args.args[0])
+        self.assertNotIn("слесарь", message.answer.call_args.args[0])
+        self.assertNotIn("рЫцарь", message.answer.call_args.args[0])
+        self.assertIn("ассоциация", message.answer.call_args.args[0])
         keyboard = message.answer.call_args.kwargs["reply_markup"]
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:2:0")
         self.assertEqual(
             [button.text for row in keyboard.inline_keyboard for button in row],
-            ["Слесарь NASA & мастер", "РЫцарь SQL"],
+            ["Ключ & дверь", "Башня SQL"],
         )
 
 

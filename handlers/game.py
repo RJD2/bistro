@@ -12,6 +12,7 @@ import chart_messages
 from chart_updates import recipient_guard, refresh_question_charts, statistics_key
 from db import async_session
 from models import User, Answer, Question
+from questions import next_available_question, question_choices
 from states import GameStates
 from keyboards import get_keyboard
 from messages import MESSAGES
@@ -35,12 +36,10 @@ def _is_group(message: types.Message) -> bool:
 
 
 def question_text(question: Question) -> str:
-    options = question.options.split(",")
-    if len(options) == 2:
-        prompt = f"{options[0]} вы или {options[1]}"
-    else:
-        prompt = f"{options[0]} вы, {', '.join(options[1:-1])} или {options[-1]}"
-    return f"<b>{escape(capitalize_first(question.word))}</b>\n\nЭто был быстротест {escape(prompt)}"
+    return (
+        f"<b>{escape(capitalize_first(question.word))}</b>\n\n"
+        "Какая ассоциация первой пришла вам в голову?"
+    )
 
 
 def _personal_message_options(callback: types.CallbackQuery, *, replace: bool = False) -> dict:
@@ -114,19 +113,18 @@ async def start_game(message: types.Message, state: FSMContext):
         answered_ids = {row[0] for row in result.all()}
 
         # Первый неотвеченный вопрос
-        result = await session.execute(select(Question).where(~Question.id.in_(answered_ids)).order_by(Question.id))
-        question = result.scalars().first()
+        question = await next_available_question(session, ~Question.id.in_(answered_ids))
 
         if not question:
             await message.answer(MESSAGES["game_over"])
             return
 
         qid = int(question.id)
-        options = question.options.split(",")
+        choices = question_choices(question)
         await message.answer(
             question_text(question),
             parse_mode="HTML",
-            reply_markup=get_keyboard(options, qid),
+            reply_markup=get_keyboard(choices, qid),
         )
         if not _is_group(message):
             await state.update_data(qid=qid)
@@ -206,10 +204,15 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         if not question:
             await callback.answer("Этот вопрос больше недоступен.", show_alert=True)
             return
-        options = question.options.split(",")
-        if opt >= len(options):
+        try:
+            choices = question_choices(question)
+        except ValueError:
+            await callback.answer("У этого вопроса пока не заполнены ассоциации. Выберите другой вопрос: /play.", show_alert=True)
+            return
+        if opt >= len(choices):
             await callback.answer("Некорректный вариант ответа.", show_alert=True)
             return
+        options = question.options.split(",")
 
         user = await get_or_create_user(callback.from_user.id, session)
         # Блокировка строки пользователя защищает от повторных голосов даже
@@ -282,17 +285,16 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
             answered_ids = {row[0] for row in result.all()}
 
-            result = await session.execute(select(Question).where(~Question.id.in_(answered_ids)).order_by(Question.id))
-            next_question = result.scalars().first()
+            next_question = await next_available_question(session, ~Question.id.in_(answered_ids))
 
         if next_question:
-            options = next_question.options.split(",")
+            choices = question_choices(next_question)
             next_qid = next_question.id
             await state.update_data(qid=next_qid)
             await message.answer(
                 question_text(next_question),
                 parse_mode="HTML",
-                reply_markup=get_keyboard(options, next_qid),
+                reply_markup=get_keyboard(choices, next_qid),
             )
         else:
             await message.answer(MESSAGES["game_over"])

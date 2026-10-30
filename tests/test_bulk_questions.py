@@ -84,13 +84,17 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         callback.answer = AsyncMock()
         return callback
 
-    async def prepare_draft(self, words=None, options=None):
+    async def prepare_draft(self, words=None, options=None, associo=None):
         words = words or ["Цезарь", "Замок", "Камера"]
         options = options or [" салат , император ", "слесарь,рыцарь", "фотограф,велосипедист,преступник"]
         await admin.start_add_questions(self.message("/add_questions"), self.state)
         await admin.receive_question_words(self.message(", ".join(words)), self.state)
-        for choices in options:
+        for index, choices in enumerate(options):
             await admin.receive_bulk_question_options(self.message(choices), self.state)
+            associations = associo[index] if associo else ",".join(
+                f"ассоциация {i}" for i in range(1, len(choices.split(",")) + 1)
+            )
+            await admin.receive_bulk_question_associo(self.message(associations), self.state)
         data = await self.state.get_data()
         self.assertEqual(await self.state.get_state(), BulkQuestionCreationStates.waiting_for_confirmation.state)
         return next(reply for _, _, reply in self.sent if reply.message_id == data["confirmation_message_id"])
@@ -104,6 +108,11 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Цезарь", self.sent[-1][0])
         for index, choices in enumerate((" салат , император ", "слесарь,рыцарь", "фотограф,велосипедист,преступник")):
             await admin.receive_bulk_question_options(self.message(choices), self.state)
+            self.assertEqual(await self.state.get_state(), BulkQuestionCreationStates.waiting_for_associo.state)
+            self.assertEqual((await self.state.get_data())["bulk_index"], index)
+            await admin.receive_bulk_question_associo(self.message(
+                ",".join(f"ассоциация {i}" for i in range(1, len(choices.split(",")) + 1))
+            ), self.state)
             data = await self.state.get_data()
             self.assertEqual(data["bulk_index"], index + 1)
             if index < 2:
@@ -111,9 +120,9 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(["Замок", "Камера"][index], self.sent[-1][0])
         self.session.execute.assert_not_awaited()
         self.assertEqual(data["bulk_questions"], [
-            {"word": "Цезарь", "options": ["салат", "император"]},
-            {"word": "Замок", "options": ["слесарь", "рыцарь"]},
-            {"word": "Камера", "options": ["фотограф", "велосипедист", "преступник"]},
+            {"word": "Цезарь", "options": ["салат", "император"], "associo": ["ассоциация 1", "ассоциация 2"]},
+            {"word": "Замок", "options": ["слесарь", "рыцарь"], "associo": ["ассоциация 1", "ассоциация 2"]},
+            {"word": "Камера", "options": ["фотограф", "велосипедист", "преступник"], "associo": ["ассоциация 1", "ассоциация 2", "ассоциация 3"]},
         ])
         preview = next(reply for _, _, reply in self.sent if reply.message_id == data["confirmation_message_id"])
         await admin.confirm_add_questions(self.callback(preview), self.state)
@@ -123,8 +132,11 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         statement = self.session.execute.call_args.args[0].compile(dialect=postgresql.dialect())
         self.assertEqual(statement.params, {
             "word_m0": "Цезарь", "options_m0": "салат,император",
+            "associo_m0": "ассоциация 1,ассоциация 2",
             "word_m1": "Замок", "options_m1": "слесарь,рыцарь",
+            "associo_m1": "ассоциация 1,ассоциация 2",
             "word_m2": "Камера", "options_m2": "фотограф,велосипедист,преступник",
+            "associo_m2": "ассоциация 1,ассоциация 2,ассоциация 3",
         })
         self.assertIn("ON CONFLICT (word) DO NOTHING", str(statement))
         self.assertNotIn("DO UPDATE", str(statement))
@@ -148,15 +160,17 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         displayed = "\n".join(text for text, _, _ in self.sent)
         self.assertIn("Вопрос 1 из 2: «Камера NASA»", displayed)
         self.assertIn("Вопрос 2 из 2: «Замок SQL»", displayed)
-        self.assertIn("1. Камера NASA\n   • фотограф SQL\n   • ВЕЛОСИПЕДИСТ", displayed)
-        self.assertIn("2. Замок SQL\n   • сЛесарь NASA\n   • рыцарь", displayed)
+        self.assertIn("1. Камера NASA\n1. ассоциация 1 → фотограф SQL\n2. ассоциация 2 → ВЕЛОСИПЕДИСТ", displayed)
+        self.assertIn("2. Замок SQL\n1. ассоциация 1 → сЛесарь NASA\n2. ассоциация 2 → рыцарь", displayed)
         self.assertEqual((await self.state.get_data())["bulk_words"], words)
 
         await admin.confirm_add_questions(self.callback(preview), self.state)
         statement = self.session.execute.call_args.args[0].compile(dialect=postgresql.dialect())
         self.assertEqual(statement.params, {
             "word_m0": "камера NASA", "options_m0": "фотограф SQL,ВЕЛОСИПЕДИСТ",
+            "associo_m0": "ассоциация 1,ассоциация 2",
             "word_m1": "замок SQL", "options_m1": "сЛесарь NASA,рыцарь",
+            "associo_m1": "ассоциация 1,ассоциация 2",
         })
 
     async def test_every_bulk_step_requires_exact_owner_and_private_chat(self):
@@ -164,6 +178,7 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
             (admin.start_add_questions, False),
             (admin.receive_question_words, False),
             (admin.receive_bulk_question_options, False),
+            (admin.receive_bulk_question_associo, False),
             (admin.cancel_add_questions, False),
             (admin.confirm_add_questions, True),
             (admin.cancel_bulk_callback, True),
@@ -198,11 +213,24 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         await admin.start_add_questions(self.message("/add_questions"), self.state)
         await admin.receive_question_words(self.message("Цезарь,Замок"), self.state)
         await admin.receive_bulk_question_options(self.message("салат,император"), self.state)
+        await admin.receive_bulk_question_associo(self.message("повар,Рим"), self.state)
         before = await self.state.get_data()
         for options in (None, "", "рыцарь", "рыцарь,", "Рыцарь,рыцарь", "а" * 65 + ",б", "/cancel,нет", "да,нет\nпотом", ",".join(str(i) for i in range(9))):
             with self.subTest(options=options):
                 await admin.receive_bulk_question_options(self.message(options), self.state)
                 self.assertEqual(await self.state.get_state(), BulkQuestionCreationStates.waiting_for_options.state)
+                self.assertEqual(await self.state.get_data(), before)
+        self.session_factory.assert_not_called()
+
+    async def test_invalid_associations_keep_current_options_and_collected_questions(self):
+        await admin.start_add_questions(self.message("/add_questions"), self.state)
+        await admin.receive_question_words(self.message("Цезарь,Замок"), self.state)
+        await admin.receive_bulk_question_options(self.message("салат,Рим"), self.state)
+        before = await self.state.get_data()
+        for associations in (None, "", "повар", "повар,", "повар,император,третий", "повар,ПОВАР"):
+            with self.subTest(associations=associations):
+                await admin.receive_bulk_question_associo(self.message(associations), self.state)
+                self.assertEqual(await self.state.get_state(), BulkQuestionCreationStates.waiting_for_associo.state)
                 self.assertEqual(await self.state.get_data(), before)
         self.session_factory.assert_not_called()
 
@@ -266,6 +294,7 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         await admin.start_add_question(self.message("/add_question"), self.state)
         await admin.receive_question_word(self.message("Цезарь"), self.state)
         await admin.receive_question_options(self.message("салат,император"), self.state)
+        await admin.receive_question_associo(self.message("повар,Рим"), self.state)
         single_preview_id = (await self.state.get_data())["confirmation_message_id"]
         await admin.start_add_questions(self.message("/add_questions"), self.state)
         self.bot.edit_message_reply_markup.assert_awaited_with(chat_id=OWNER_ID, message_id=single_preview_id, reply_markup=None)
@@ -295,7 +324,7 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
     async def test_fifty_questions_produce_complete_previews_within_telegram_message_limit(self):
         words = [f"Вопрос {index} " + "🧩" * 20 + "<&>" for index in range(50)]
         option_text = ",".join(chr(0x1F600 + index) * 64 for index in range(8))
-        await self.prepare_draft(words, [option_text] * 50)
+        await self.prepare_draft(words, [option_text] * 50, [option_text] * 50)
         draft = await self.state.get_data()
         self.assertEqual(len(draft["bulk_questions"]), 50)
         final_text = self.sent[-1][0]

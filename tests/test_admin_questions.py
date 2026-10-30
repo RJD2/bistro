@@ -82,15 +82,18 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.storage.close()
 
-    async def prepare_draft(self, word="Камера & <тест>", options=" фотограф , велосипедист , преступник "):
+    async def prepare_draft(self, word="Камера & <тест>", options=" фотограф , велосипедист , преступник ", associo=None):
         await admin.start_add_question(message("/add_question"), self.state)
         self.assertEqual(await self.state.get_state(), QuestionCreationStates.waiting_for_word.state)
         await admin.receive_question_word(message(word), self.state)
         self.assertEqual(await self.state.get_state(), QuestionCreationStates.waiting_for_options.state)
-        options_message = message(options)
+        await admin.receive_question_options(message(options), self.state)
+        self.assertEqual(await self.state.get_state(), QuestionCreationStates.waiting_for_associo.state)
+        associo = associo or ",".join(f"ассоциация {i}" for i in range(1, len(options.split(",")) + 1))
+        options_message = message(associo)
         preview = message(message_id=99)
         options_message.answer.return_value = preview
-        await admin.receive_question_options(options_message, self.state)
+        await admin.receive_question_associo(options_message, self.state)
         self.assertEqual(await self.state.get_state(), QuestionCreationStates.waiting_for_confirmation.state)
         return preview, options_message
 
@@ -99,6 +102,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
             (admin.start_add_question, False),
             (admin.receive_question_word, False),
             (admin.receive_question_options, False),
+            (admin.receive_question_associo, False),
             (admin.cancel_add_question, False),
             (admin.confirm_add_question, True),
             (admin.cancel_question_callback, True),
@@ -132,9 +136,9 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         self.session.execute.assert_not_awaited()
         preview_text = source.answer.call_args.args[0]
         self.assertIn("Камера NASA &amp; &lt;тест&gt;", preview_text)
-        self.assertIn("1. фотограф SQL", preview_text)
-        self.assertIn("2. ВЕЛОСИПЕДИСТ", preview_text)
-        self.assertIn("3. прЕступник", preview_text)
+        self.assertIn("1. ассоциация 1 → фотограф SQL", preview_text)
+        self.assertIn("2. ассоциация 2 → ВЕЛОСИПЕДИСТ", preview_text)
+        self.assertIn("3. ассоциация 3 → прЕступник", preview_text)
         self.assertEqual(source.answer.call_args.kwargs["parse_mode"], "HTML")
 
         event = callback(preview)
@@ -145,6 +149,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         values = statement.compile(dialect=postgresql.dialect()).params
         self.assertEqual(values["word"], "камера NASA & <тест>")
         self.assertEqual(values["options"], "фотограф SQL,ВЕЛОСИПЕДИСТ,прЕступник")
+        self.assertEqual(values["associo"], "ассоциация 1,ассоциация 2,ассоциация 3")
         self.assertIn("Камера NASA & <тест>", preview.answer.call_args.args[0])
         self.session.commit.assert_awaited_once()
         self.assertIsNone(await self.state.get_state())
@@ -190,6 +195,27 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(await self.state.get_state())
                 self.assertEqual(await self.state.get_data(), {})
         self.session_factory.assert_not_called()
+
+    async def test_invalid_associations_keep_options_and_wait_for_matching_count(self):
+        await admin.start_add_question(message("/add_question"), self.state)
+        await admin.receive_question_word(message("цезарь"), self.state)
+        await admin.receive_question_options(message("салат,Рим"), self.state)
+        before = await self.state.get_data()
+        for associo in (None, "", "повар", "повар,", "повар,ПОВАР", "повар,император,третий", "а" * 65 + ",б"):
+            with self.subTest(associo=associo):
+                await admin.receive_question_associo(message(associo), self.state)
+                self.assertEqual(await self.state.get_state(), QuestionCreationStates.waiting_for_associo.state)
+                self.assertEqual(await self.state.get_data(), before)
+        self.session_factory.assert_not_called()
+
+    async def test_confirmation_rejects_draft_without_associations(self):
+        preview, _ = await self.prepare_draft()
+        data = await self.state.get_data()
+        data.pop("associo")
+        await self.state.set_data(data)
+        await admin.confirm_add_question(callback(preview), self.state)
+        self.session_factory.assert_not_called()
+        self.assertIsNone(await self.state.get_state())
 
     async def test_stale_confirmation_cannot_save_a_different_draft(self):
         await self.prepare_draft()
@@ -261,6 +287,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
         await state.set_data({
             "word": "Замок",
             "options": ["слесарь", "рыцарь"],
+            "associo": ["ключ", "башня"],
             "confirmation_message_id": 99,
         })
         owner = types.User(id=OWNER_ID, is_bot=False, first_name="Владелец")
@@ -320,7 +347,10 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
 
 class AddedQuestionRenderingTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_question_with_markup_characters_is_displayed_as_text(self):
-        question = Question(id=12, word="замок NASA <&> _тест_?", options="рыцарь SQL & маг,сЛесарь <мастер>")
+        question = Question(
+            id=12, word="замок NASA <&> _тест_?", options="рыцарь SQL & маг,сЛесарь <мастер>",
+            associo="башня & ров,ключ <мастер>",
+        )
         session = AsyncMock(spec=AsyncSession)
         answered = MagicMock()
         answered.all.return_value = []
@@ -339,12 +369,11 @@ class AddedQuestionRenderingTests(unittest.IsolatedAsyncioTestCase):
         text = event.answer.call_args.args[0]
         self.assertEqual(event.answer.call_args.kwargs["parse_mode"], "HTML")
         self.assertIn("Замок NASA &lt;&amp;&gt; _тест_?", text)
-        self.assertIn("рыцарь SQL &amp; маг", text)
-        self.assertIn("сЛесарь &lt;мастер&gt;", text)
+        self.assertNotIn("рыцарь SQL", text)
         keyboard = event.answer.call_args.kwargs["reply_markup"]
         self.assertEqual(
             [button.text for row in keyboard.inline_keyboard for button in row],
-            ["Рыцарь SQL & маг", "СЛесарь <мастер>"],
+            ["Башня & ров", "Ключ <мастер>"],
         )
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:12:0")
 

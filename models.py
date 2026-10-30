@@ -32,6 +32,9 @@ class Question(Base):
     id = Column(Integer, primary_key=True, index=True)
     word = Column(String, nullable=False, unique=True)
     options = Column(String, nullable=False)
+    # Choices shown to players; positions correspond to result identities in options.
+    # Empty values keep legacy questions pending until an admin fills them in.
+    associo = Column(String, nullable=False, default="", server_default="")
 
 
 class AutotestSubscription(Base):

@@ -97,7 +97,7 @@ class GroupAutotestDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.subscription = GroupAutotestSubscription(
             chat_id=CHAT_ID, next_send_at=NOW - timedelta(days=3),
         )
-        self.question = Question(id=8, word="камера & SQL", options="фотограф,преступник")
+        self.question = Question(id=8, word="камера & SQL", options="фотограф,преступник", associo="снимок,тюрьма")
         for active_patch in (
             patch.object(autotest, "async_session", factory),
             patch.object(autotest, "utc_now", return_value=NOW),
@@ -141,6 +141,12 @@ class GroupAutotestDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ephemeral_message_parameters", kwargs)
         self.assertEqual(kwargs["parse_mode"], "HTML")
         self.assertIn("Камера &amp; SQL", kwargs["text"])
+        self.assertNotIn("фотограф", kwargs["text"])
+        self.assertNotIn("преступник", kwargs["text"])
+        self.assertEqual(
+            [row[0].text for row in kwargs["reply_markup"].inline_keyboard],
+            ["Снимок", "Тюрьма"],
+        )
         self.assertEqual(
             [row[0].callback_data for row in kwargs["reply_markup"].inline_keyboard],
             ["autotest_answer:8:0", "autotest_answer:8:1"],
@@ -154,6 +160,7 @@ class GroupAutotestDeliveryTests(unittest.IsolatedAsyncioTestCase):
         query = sql(self.session.execute.await_args_list[1].args[0])
         self.assertIn("group_autotest_deliveries.question_id", str(query))
         self.assertIn("group_autotest_deliveries.chat_id =", str(query))
+        self.assertIn("questions.associo", str(query).partition("WHERE")[2])
         self.assertIn(CHAT_ID, query.params.values())
         self.assertNotIn("FROM answers", str(query))
         self.assertNotIn("FROM autotest_deliveries", str(query))

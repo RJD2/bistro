@@ -26,6 +26,7 @@ def get_main_menu(is_admin: bool = False, *, autotest_enabled: bool = False) -> 
     if is_admin:
         buttons.append([KeyboardButton(text="➕ Добавить вопрос")])
         buttons.append([KeyboardButton(text="📚 Добавить вопросы")])
+        buttons.append([KeyboardButton(text="🧩 Добавить ассоциации")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 

@@ -34,6 +34,7 @@ async def cmd_help(message: types.Message):
         text += (
             "\n\n/add_question — добавить вопрос"
             "\n/add_questions — добавить вопросы списком"
+            "\n/add_associo [слово] — заполнить ассоциации к существующим вопросам"
             "\n/cancel — отменить добавление"
         )
     await message.answer(text)

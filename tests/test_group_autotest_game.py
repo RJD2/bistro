@@ -70,7 +70,7 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
         factory = MagicMock()
         factory.return_value.__aenter__.return_value = self.session
         self.question = Question(
-            id=QUESTION_ID, word="камера SQL & <тест>", options="фотограф,преступник",
+            id=QUESTION_ID, word="камера SQL & <тест>", options="фотограф,преступник", associo="снимок,тюрьма",
         )
         self.lookup = AsyncMock(side_effect=lambda tg_id, session: SimpleNamespace(id=tg_id + 1000))
         self.remember = AsyncMock()

@@ -36,7 +36,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.state = self.dp.fsm.get_context(
             bot=self.bot, chat_id=USER_ID, user_id=USER_ID,
         )
-        self.question = Question(id=17, word="камера NASA & <тест>", options="фотограф,преступник")
+        self.question = Question(id=17, word="камера NASA & <тест>", options="фотограф,преступник", associo="снимок,тюрьма")
         self.session = AsyncMock(spec=AsyncSession)
         self.session_factory = MagicMock()
         self.session_factory.return_value.__aenter__.return_value = self.session
@@ -144,6 +144,48 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         result = self.api_methods()[-1]
         self.assertIn("вы преступник", result.media.caption)
         self.assertNotIn("вы фотограф", result.media.caption)
+
+    async def test_association_position_maps_to_result_and_statistics_identity(self):
+        self.question = Question(
+            id=17, word="цезарь", options="салат,Рим", associo="повар,император",
+        )
+        for option, expected in ((0, "салат"), (1, "Рим")):
+            with self.subTest(association=self.question.associo.split(",")[option]):
+                self.session.add.reset_mock()
+                self.transport.reset_mock()
+
+                await self.answer_daily_question(option=option)
+
+                self.assertEqual(self.session.add.call_args.args[0].choice, expected)
+                result = self.api_methods()[-1]
+                self.assertIn(f"вы {expected}", result.media.caption)
+                self.assertNotIn("повар", result.media.caption)
+                self.assertNotIn("император", result.media.caption)
+
+    async def test_question_with_incomplete_associations_cannot_record_a_vote(self):
+        for associo in (None, "", "  ", "снимок", "снимок,тюрьма,комната", "снимок,", "снимок,СНИМОК"):
+            with self.subTest(associo=associo):
+                self.question.associo = associo
+                self.session.add.reset_mock()
+                self.session.commit.reset_mock()
+                self.transport.reset_mock()
+                self.remember.reset_mock()
+                self.refresh.reset_mock()
+                self.session.execute.side_effect = [scalar_result(self.question)]
+
+                await self.dp.feed_update(self.bot, types.Update(
+                    update_id=1, callback_query=self.callback(),
+                ))
+
+                self.session.add.assert_not_called()
+                self.session.commit.assert_not_awaited()
+                self.assertEqual(self.session.execute.await_count, 1)
+                self.session.execute.reset_mock()
+                self.assertEqual([method.__api_method__ for method in self.api_methods()], [
+                    "answerCallbackQuery",
+                ])
+                self.remember.assert_not_awaited()
+                self.refresh.assert_not_awaited()
 
 
 class AutotestMenuTests(unittest.IsolatedAsyncioTestCase):

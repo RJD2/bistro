@@ -12,6 +12,7 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import chart_updates
@@ -79,7 +80,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         self.statistics = {"фотограф SQL & художник": 50.0, "преступник": 50.0}
         self.question = Question(
             id=1, word="камера NASA & <тест>",
-            options="фотограф SQL & художник,преступник",
+            options="фотограф SQL & художник,преступник", associo="снимок,тюрьма",
         )
         self.remember_chart = AsyncMock()
         self.forget_message = AsyncMock()
@@ -170,15 +171,25 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(method.__api_method__, "sendMessage")
                 self.assertEqual(method.chat_id, CHAT_ID)
                 self.assertIn("Камера NASA &amp; &lt;тест&gt;", method.text)
+                self.assertNotIn("фотограф", method.text)
+                self.assertNotIn("преступник", method.text)
+                self.assertEqual(
+                    [row[0].text for row in method.reply_markup.inline_keyboard],
+                    ["Снимок", "Тюрьма"],
+                )
                 self.assertEqual(method.reply_markup.inline_keyboard[0][0].callback_data,
                                  "answer:1:0")
                 self.assertNotIn("ephemeral_message_parameters", payload)
                 self.assertIsNone(await state.get_state())
                 self.assertEqual(await state.get_data(), {})
                 self.session.add.assert_not_called()
+                query = str(self.session.execute.await_args.args[0].compile(
+                    dialect=postgresql.dialect(),
+                ))
+                self.assertIn("questions.associo", query.partition("WHERE")[2])
 
     async def test_private_answers_still_require_game_state_and_use_regular_messages(self):
-        for next_question in (None, Question(id=2, word="замок SQL", options="слесарь,рыцарь")):
+        for next_question in (None, Question(id=2, word="замок SQL", options="слесарь,рыцарь", associo="ключ,башня")):
             with self.subTest(next_question=next_question):
                 self.transport.requests.clear()
                 self.user_lookup.reset_mock()
@@ -276,7 +287,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                 self.transport.requests.clear()
                 self.session.add.reset_mock()
                 self.refresh_charts.reset_mock()
-                next_question = Question(id=2, word="замок SQL", options="слесарь,рыцарь")
+                next_question = Question(id=2, word="замок SQL", options="слесарь,рыцарь", associo="ключ,башня")
 
                 for update_id, user_id in enumerate((111, 222), 1):
                     self.session.execute.reset_mock()
@@ -527,7 +538,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_long_result_keeps_full_text_and_chart_private_for_both_message_types(self):
         choice = "длинный вариант & тест " * 60
-        self.question = Question(id=1, word="камера NASA", options=f"{choice},преступник")
+        self.question = Question(id=1, word="камера NASA", options=f"{choice},преступник", associo="снимок,тюрьма")
         expected_text = (
             "<b>Камера NASA</b>\n\nЭто был быстротест, вы "
             + choice.replace("&", "&amp;")
