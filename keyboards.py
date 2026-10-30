@@ -8,7 +8,7 @@ def get_keyboard(options: list, qid: int):
         InlineKeyboardButton(text=capitalize_first(opt), callback_data=f"answer:{qid}:{i}")
         for i, opt in enumerate(options)
     ]
-    kb = InlineKeyboardMarkup(inline_keyboard=[buttons])
+    kb = InlineKeyboardMarkup(inline_keyboard=[[button] for button in buttons])
     return kb
 
 

@@ -329,7 +329,7 @@ class AddedQuestionRenderingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Слесарь &lt;мастер&gt;", text)
         keyboard = event.answer.call_args.kwargs["reply_markup"]
         self.assertEqual(
-            [button.text for button in keyboard.inline_keyboard[0]],
+            [button.text for row in keyboard.inline_keyboard for button in row],
             ["Рыцарь SQL & маг", "Слесарь <мастер>"],
         )
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:12:0")

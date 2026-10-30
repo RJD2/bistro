@@ -174,7 +174,10 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Рыцарь", message.answer.call_args.args[0])
         keyboard = message.answer.call_args.kwargs["reply_markup"]
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:2:0")
-        self.assertEqual([button.text for button in keyboard.inline_keyboard[0]], ["Слесарь NASA", "Рыцарь"])
+        self.assertEqual(
+            [button.text for row in keyboard.inline_keyboard for button in row],
+            ["Слесарь NASA", "Рыцарь"],
+        )
 
 
 if __name__ == "__main__":
