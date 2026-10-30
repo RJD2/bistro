@@ -89,15 +89,18 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         session = AsyncMock(spec=AsyncSession)
         question_result = MagicMock()
         question_result.scalars.return_value.first.return_value = question
+        previous_result = MagicMock()
+        previous_result.scalars.return_value.first.return_value = None
         answered_result = MagicMock()
         answered_result.all.return_value = [(1,)]
         next_result = MagicMock()
         next_result.scalars.return_value.first.return_value = next_question
-        session.execute.side_effect = [question_result, answered_result, next_result]
+        session.execute.side_effect = [question_result, previous_result, answered_result, next_result]
         session_factory = MagicMock()
         session_factory.return_value.__aenter__.return_value = session
 
         message = MagicMock(spec=types.Message)
+        message.chat = SimpleNamespace(id=123, type="private")
         message.edit_media = AsyncMock()
         message.edit_text = AsyncMock()
         message.answer_photo = AsyncMock()
@@ -121,6 +124,9 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
             patch.object(game, "get_or_create_user", AsyncMock(return_value=SimpleNamespace(id=7))),
             patch.object(game, "get_question_statistics", side_effect=get_saved_statistics),
             patch.object(game, "render_statistics_chart", return_value=png) as renderer,
+            patch.object(game.chart_messages, "remember_chart", AsyncMock()),
+            patch.object(game.chart_messages, "forget_message", AsyncMock()),
+            patch.object(game, "refresh_question_charts", AsyncMock()),
         ):
             await game.process_answer(callback, state)
             renderer.assert_called_once_with(statistics)
