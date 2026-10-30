@@ -7,8 +7,6 @@ from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.patches import Patch
 
-from text_formatting import capitalize_first
-
 
 COLORS = (
     "#2563eb",
@@ -34,7 +32,7 @@ def _render_statistics_chart(statistics: dict[str, float]) -> bytes:
     entries = list(statistics.items())
     colors = [COLORS[index % len(COLORS)] for index in range(len(entries))]
     labels = [
-        fill(f"{capitalize_first(choice)}: {percentage:.0f}%", width=48)
+        fill(f"{choice}: {percentage:.0f}%", width=48)
         for choice, percentage in entries
     ]
     legend_lines = sum(label.count("\n") + 1 for label in labels)

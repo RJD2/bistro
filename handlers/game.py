@@ -48,11 +48,10 @@ async def start_game(message: types.Message, state: FSMContext):
         qid = int(question.id) # type: ignore
         await state.update_data(qid=qid)
         options = question.options.split(",")
-        display_options = [capitalize_first(option) for option in options]
         if len(options) == 2:
-            msg = f"{display_options[0]} вы или {display_options[1]}"
+            msg = f"{options[0]} вы или {options[1]}"
         else:
-            msg = f"{display_options[0]} вы, {", ".join(display_options[1:-1])} или {display_options[-1]}"
+            msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
         await message.answer(
             f"<b>{escape(capitalize_first(question.word))}</b>\n\nЭто был быстротест {escape(msg)}",
             parse_mode="HTML",
@@ -160,11 +159,10 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
 
     if next_question:
         options = next_question.options.split(",")
-        display_options = [capitalize_first(option) for option in options]
         if len(options) == 2:
-            msg = f"{display_options[0]} вы или {display_options[1]}"
+            msg = f"{options[0]} вы или {options[1]}"
         else:
-            msg = f"{display_options[0]} вы, {", ".join(display_options[1:-1])} или {display_options[-1]}"
+            msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
         next_qid = next_question.id
         await state.update_data(qid=next_qid)
         await message.answer(

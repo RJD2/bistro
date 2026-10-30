@@ -125,25 +125,25 @@ class BulkQuestionTests(unittest.IsolatedAsyncioTestCase):
         await admin.confirm_add_questions(self.callback(preview), self.state)
         self.session.execute.assert_awaited_once()
 
-    async def test_prompts_and_previews_capitalize_display_without_rewriting_saved_values(self):
+    async def test_prompts_capitalize_titles_and_keep_options_and_saved_values(self):
         words = ["камера NASA", "замок SQL"]
         self.result.scalars.return_value.all.return_value = words
         preview = await self.prepare_draft(
-            words=words, options=["фотограф SQL,велосипедист", "слесарь NASA,рыцарь"]
+            words=words, options=["фотограф SQL,ВЕЛОСИПЕДИСТ", "сЛесарь NASA,рыцарь"]
         )
 
         displayed = "\n".join(text for text, _, _ in self.sent)
         self.assertIn("Вопрос 1 из 2: «Камера NASA»", displayed)
         self.assertIn("Вопрос 2 из 2: «Замок SQL»", displayed)
-        self.assertIn("1. Камера NASA\n   • Фотограф SQL\n   • Велосипедист", displayed)
-        self.assertIn("2. Замок SQL\n   • Слесарь NASA\n   • Рыцарь", displayed)
+        self.assertIn("1. Камера NASA\n   • фотограф SQL\n   • ВЕЛОСИПЕДИСТ", displayed)
+        self.assertIn("2. Замок SQL\n   • сЛесарь NASA\n   • рыцарь", displayed)
         self.assertEqual((await self.state.get_data())["bulk_words"], words)
 
         await admin.confirm_add_questions(self.callback(preview), self.state)
         statement = self.session.execute.call_args.args[0].compile(dialect=postgresql.dialect())
         self.assertEqual(statement.params, {
-            "word_m0": "камера NASA", "options_m0": "фотограф SQL,велосипедист",
-            "word_m1": "замок SQL", "options_m1": "слесарь NASA,рыцарь",
+            "word_m0": "камера NASA", "options_m0": "фотограф SQL,ВЕЛОСИПЕДИСТ",
+            "word_m1": "замок SQL", "options_m1": "сЛесарь NASA,рыцарь",
         })
 
     async def test_every_bulk_step_requires_exact_owner_and_private_chat(self):

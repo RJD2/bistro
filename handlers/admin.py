@@ -142,7 +142,7 @@ def _bulk_preview_chunks(questions: list[dict]) -> list[str]:
     for index, question in enumerate(questions, 1):
         section = (
             f"{index}. {capitalize_first(question['word'])}\n"
-            + "\n".join(f"   • {capitalize_first(option)}" for option in question["options"])
+            + "\n".join(f"   • {option}" for option in question["options"])
             + "\n\n"
         )
         # Telegram считает длину сообщения в кодовых единицах UTF-16.
@@ -227,7 +227,7 @@ async def receive_question_options(message: types.Message, state: FSMContext):
     ]])
     preview = await message.answer(
         f"<b>{escape(capitalize_first(word))}</b>\n\nВарианты ответа:\n"
-        + "\n".join(f"{index}. {escape(capitalize_first(option))}" for index, option in enumerate(options, 1))
+        + "\n".join(f"{index}. {escape(option)}" for index, option in enumerate(options, 1))
         + "\n\nДобавить этот вопрос?",
         parse_mode="HTML",
         reply_markup=keyboard,

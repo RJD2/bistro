@@ -55,15 +55,15 @@ class QuestionStatisticsTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatisticsChartTests(unittest.TestCase):
-    def test_legend_capitalizes_labels_without_changing_statistics_or_acronyms(self):
-        statistics = {"плотник": 0.0, "военачальник NASA": 100.0, "проводник SQL": 0.0}
+    def test_legend_preserves_exact_choice_case_and_statistics(self):
+        statistics = {"плотник": 0.0, "ВОЕНАЧАЛЬНИК NASA": 100.0, "пРоводник SQL": 0.0}
         original = statistics.copy()
         with patch("statistics_chart.Patch", wraps=Patch) as legend_patch:
             render_statistics_chart(statistics)
 
         self.assertEqual(
             [call.kwargs["label"] for call in legend_patch.call_args_list],
-            ["Плотник: 0%", "Военачальник NASA: 100%", "Проводник SQL: 0%"],
+            ["плотник: 0%", "ВОЕНАЧАЛЬНИК NASA: 100%", "пРоводник SQL: 0%"],
         )
         self.assertEqual(statistics, original)
 
@@ -159,7 +159,7 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         choice = "длинный вариант " * 70
         question = Question(id=1, word="камера NASA", options=f"{choice},велосипедист")
         statistics = {choice: 100.0, "велосипедист": 0.0}
-        next_question = Question(id=2, word="замок SQL", options="слесарь NASA,рыцарь")
+        next_question = Question(id=2, word="замок SQL", options="слесарь NASA & мастер,рЫцарь SQL")
 
         _, message, state, png = await self.process(question, statistics, next_question)
 
@@ -178,13 +178,13 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         state.clear.assert_not_awaited()
         message.answer.assert_awaited_once()
         self.assertIn("Замок SQL", message.answer.call_args.args[0])
-        self.assertIn("Слесарь NASA", message.answer.call_args.args[0])
-        self.assertIn("Рыцарь", message.answer.call_args.args[0])
+        self.assertIn("слесарь NASA &amp; мастер", message.answer.call_args.args[0])
+        self.assertIn("рЫцарь SQL", message.answer.call_args.args[0])
         keyboard = message.answer.call_args.kwargs["reply_markup"]
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, "answer:2:0")
         self.assertEqual(
             [button.text for row in keyboard.inline_keyboard for button in row],
-            ["Слесарь NASA", "Рыцарь"],
+            ["слесарь NASA & мастер", "рЫцарь SQL"],
         )
 
 
