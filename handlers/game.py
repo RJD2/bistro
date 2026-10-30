@@ -34,7 +34,7 @@ def _is_group(message: types.Message) -> bool:
     return message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}
 
 
-def _question_text(question: Question) -> str:
+def question_text(question: Question) -> str:
     options = question.options.split(",")
     if len(options) == 2:
         prompt = f"{options[0]} вы или {options[1]}"
@@ -124,7 +124,7 @@ async def start_game(message: types.Message, state: FSMContext):
         qid = int(question.id)
         options = question.options.split(",")
         await message.answer(
-            _question_text(question),
+            question_text(question),
             parse_mode="HTML",
             reply_markup=get_keyboard(options, qid),
         )
@@ -193,7 +193,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
     try:
         action, raw_qid, raw_opt = callback.data.split(":")
         qid, opt = int(raw_qid), int(raw_opt)
-        if action != "answer" or not 0 < qid <= 2**31 - 1 or opt < 0:
+        if action not in {"answer", "autotest_answer"} or not 0 < qid <= 2**31 - 1 or opt < 0:
             raise ValueError
     except ValueError:
         await callback.answer("Некорректный вариант ответа.", show_alert=True)
@@ -272,6 +272,11 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
                     parse_mode=parse_mode, statistics_key=chart_key,
                 )
 
+        if action == "autotest_answer":
+            # Daily questions show their result without starting a regular game
+            # or changing a draft/the current game stored in the FSM.
+            return
+
         # Ищем следующий вопрос
         async with async_session() as session:
             result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
@@ -285,7 +290,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             next_qid = next_question.id
             await state.update_data(qid=next_qid)
             await message.answer(
-                _question_text(next_question),
+                question_text(next_question),
                 parse_mode="HTML",
                 reply_markup=get_keyboard(options, next_qid),
             )
@@ -307,8 +312,13 @@ def register_handlers_game(dp: Dispatcher):
     dp.message.register(reset_progress, F.text == "🔄 Сбросить прогресс")
     dp.callback_query.register(
         process_answer,
-        F.data.startswith("answer:"),
+        F.data.startswith("answer:") | F.data.startswith("autotest_answer:"),
         F.message.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
+    )
+    dp.callback_query.register(
+        process_answer,
+        F.data.startswith("autotest_answer:"),
+        F.message.chat.type == ChatType.PRIVATE,
     )
     dp.callback_query.register(
         process_answer,

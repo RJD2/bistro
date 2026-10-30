@@ -3,9 +3,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from text_formatting import capitalize_first
 
 
-def get_keyboard(options: list, qid: int):
+def get_keyboard(options: list, qid: int, *, callback_prefix: str = "answer"):
     buttons = [
-        InlineKeyboardButton(text=capitalize_first(opt), callback_data=f"answer:{qid}:{i}")
+        InlineKeyboardButton(text=capitalize_first(opt), callback_data=f"{callback_prefix}:{qid}:{i}")
         for i, opt in enumerate(options)
     ]
     kb = InlineKeyboardMarkup(inline_keyboard=[[button] for button in buttons])
@@ -15,6 +15,7 @@ def get_keyboard(options: list, qid: int):
 def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="🎮 Быстротест")],
+        [KeyboardButton(text="Автотест")],
         [KeyboardButton(text="🔄 Сбросить прогресс")]
     ]
     if is_admin:

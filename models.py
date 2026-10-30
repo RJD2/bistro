@@ -34,6 +34,37 @@ class Question(Base):
     options = Column(String, nullable=False)
 
 
+class AutotestSubscription(Base):
+    __tablename__ = "autotest_subscriptions"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    # NULL means that the user has turned off daily questions.
+    next_send_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class AutotestDelivery(Base):
+    __tablename__ = "autotest_deliveries"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), primary_key=True)
+    sent_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class GroupAutotestSubscription(Base):
+    __tablename__ = "group_autotest_subscriptions"
+
+    chat_id = Column(BigInteger, primary_key=True)
+    next_send_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class GroupAutotestDelivery(Base):
+    __tablename__ = "group_autotest_deliveries"
+
+    chat_id = Column(BigInteger, ForeignKey("group_autotest_subscriptions.chat_id"), primary_key=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), primary_key=True)
+    sent_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class ChartMessage(Base):
     __tablename__ = "chart_messages"
     __table_args__ = (
