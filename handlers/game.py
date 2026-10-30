@@ -52,8 +52,8 @@ async def start_game(message: types.Message, state: FSMContext):
         else:
             msg = f"{options[0]} вы, {", ".join(options[1:-1])} или {options[-1]}"
         await message.answer(
-            f"*{question.word}*\n\nЭто был быстротест {msg}",
-            parse_mode="MarkdownV2",
+            f"<b>{escape(question.word)}</b>\n\nЭто был быстротест {escape(msg)}",
+            parse_mode="HTML",
             reply_markup=get_keyboard(options, qid)
         )
         await state.set_state(GameStates.waiting_for_answer)
@@ -98,7 +98,7 @@ async def reset_progress(message: types.Message, state: FSMContext):
         await session.commit()
 
     await state.clear()
-    await message.answer("Ваш прогресс был сброшен. Вы можете начать игру заново.", reply_markup=None)
+    await message.answer("Ваш прогресс сброшен. Вы можете начать игру заново.", reply_markup=None)
 
 
 async def process_answer(callback: types.CallbackQuery, state: FSMContext):
@@ -168,8 +168,8 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         next_qid = next_question.id
         await state.update_data(qid=next_qid)
         await message.answer(
-            f"*{next_question.word}*\n\nЭто был быстротест {msg}",
-            parse_mode="MarkdownV2",
+            f"<b>{escape(next_question.word)}</b>\n\nЭто был быстротест {escape(msg)}",
+            parse_mode="HTML",
             reply_markup=get_keyboard(options, next_qid) # type: ignore
         )
     else:

@@ -10,10 +10,15 @@ def get_keyboard(options: list, qid: int):
     return kb
 
 
-main_menu = ReplyKeyboardMarkup(
-    keyboard=[
+def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    buttons = [
         [KeyboardButton(text="🎮 Быстротест")],
         [KeyboardButton(text="🔄 Сбросить прогресс")]
-    ],
-    resize_keyboard=True
-)
+    ]
+    if is_admin:
+        buttons.append([KeyboardButton(text="➕ Добавить вопрос")])
+        buttons.append([KeyboardButton(text="📚 Добавить вопросы")])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+main_menu = get_main_menu()

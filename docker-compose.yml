@@ -14,6 +14,7 @@ services:
     build: .
     environment:
       TOKEN: ${TOKEN}
+      ADMIN_ID: ${ADMIN_ID:-0}
       DB: postgresql+asyncpg://user:password@postgres:5432/bistro
     depends_on:
       - postgres
