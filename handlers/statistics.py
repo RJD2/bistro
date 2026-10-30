@@ -42,7 +42,7 @@ async def get_answered_questions(tg_id: int, page: int, session: AsyncSession):
 def _list_view(questions: list[Question], count: int, page: int, tg_id: int):
     if not count:
         return (
-            "📊 Статистика\n\nВы ещё не ответили ни на одно слово. Начните Быстротест: /play.",
+            "📊 Статистика\n\nВы еще не ответили ни на одно слово. Начните Быстротест: /play.",
             None,
         )
     text = (

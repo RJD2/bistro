@@ -99,7 +99,7 @@ class AutotestHandlerTests(unittest.IsolatedAsyncioTestCase):
                 self.group_toggle.assert_not_awaited()
                 self.assertEqual([method.text for method in self.transport.requests], [
                     "Вы будете получать новый Быстротест каждый день",
-                    "Автотест отключён. Вы больше не будете получать ежедневные Быстротесты.",
+                    "Автотест отключен. Вы больше не будете получать ежедневные Быстротесты.",
                 ])
                 self.assertTrue(all(method.chat_id == USER_ID for method in self.transport.requests))
                 self.assertEqual([
@@ -123,8 +123,8 @@ class AutotestHandlerTests(unittest.IsolatedAsyncioTestCase):
                         (GROUP_ID,), (GROUP_ID,),
                     ])
                     self.assertEqual([method.text for method in self.transport.requests], [
-                        "Автотест включён для группы. Новый Быстротест будет приходить сюда каждый день.",
-                        "Автотест отключён для группы. Ежедневная отправка остановлена.",
+                        "Автотест включен для группы. Новый Быстротест будет приходить сюда каждый день.",
+                        "Автотест отключен для группы. Ежедневная отправка остановлена.",
                     ])
                     self.assertTrue(all(method.chat_id == GROUP_ID for method in self.transport.requests))
 
@@ -148,7 +148,7 @@ class AutotestHandlerTests(unittest.IsolatedAsyncioTestCase):
             await self.feed_message()
 
         self.assertEqual([method.text for method in self.transport.requests], [
-            "Не удалось изменить настройку Автотеста. Попробуйте ещё раз позже.",
+            "Не удалось изменить настройку Автотеста. Попробуйте еще раз позже.",
         ])
 
     async def test_missing_sender_is_ignored(self):
@@ -166,7 +166,7 @@ class AutotestHandlerTests(unittest.IsolatedAsyncioTestCase):
 
         self.toggle.assert_not_awaited()
         self.assertEqual([method.text for method in self.transport.requests], [
-            "Не удалось изменить настройку Автотеста. Попробуйте ещё раз позже.",
+            "Не удалось изменить настройку Автотеста. Попробуйте еще раз позже.",
         ])
         self.assertEqual(self.transport.requests[0].chat_id, GROUP_ID)
 

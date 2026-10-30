@@ -12,9 +12,9 @@ from keyboards import AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON, get_main_menu
 
 logger = logging.getLogger(__name__)
 AUTOTEST_ENABLED = "Вы будете получать новый Быстротест каждый день"
-AUTOTEST_DISABLED = "Автотест отключён. Вы больше не будете получать ежедневные Быстротесты."
-GROUP_AUTOTEST_ENABLED = "Автотест включён для группы. Новый Быстротест будет приходить сюда каждый день."
-GROUP_AUTOTEST_DISABLED = "Автотест отключён для группы. Ежедневная отправка остановлена."
+AUTOTEST_DISABLED = "Автотест отключен. Вы больше не будете получать ежедневные Быстротесты."
+GROUP_AUTOTEST_ENABLED = "Автотест включен для группы. Новый Быстротест будет приходить сюда каждый день."
+GROUP_AUTOTEST_DISABLED = "Автотест отключен для группы. Ежедневная отправка остановлена."
 
 
 async def toggle_autotest(message: types.Message):
@@ -31,7 +31,7 @@ async def toggle_autotest(message: types.Message):
             enabled = await toggle_subscription(message.from_user.id)
     except SQLAlchemyError:
         logger.exception("Не удалось изменить подписку на Автотест")
-        await message.answer("Не удалось изменить настройку Автотеста. Попробуйте ещё раз позже.")
+        await message.answer("Не удалось изменить настройку Автотеста. Попробуйте еще раз позже.")
         return
 
     if is_group:
