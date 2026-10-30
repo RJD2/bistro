@@ -16,6 +16,7 @@ def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="🎮 Быстротест")],
         [KeyboardButton(text="Автотест")],
+        [KeyboardButton(text="📊 Статистика")],
         [KeyboardButton(text="🔄 Сбросить прогресс")]
     ]
     if is_admin:

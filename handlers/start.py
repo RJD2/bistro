@@ -23,6 +23,7 @@ async def cmd_start(message: types.Message):
 async def cmd_help(message: types.Message):
     text = MESSAGES["help"] + "\n\n/play — начать или продолжить тест\n/reset — сбросить свой прогресс"
     text += "\n/autotest или «Автотест» — включить или отключить ежедневный Быстротест"
+    text += "\n/statistics или «📊 Статистика» — отвеченные слова, графики и ваш выбор"
     if message.chat.type in {"group", "supergroup"}:
         text += (
             "\n\nНа вопросы может отвечать каждый. Результат виден только вам."

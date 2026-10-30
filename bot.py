@@ -8,6 +8,7 @@ from handlers.admin import register_handlers_admin
 from handlers.autotest import register_handlers_autotest
 from handlers.start import register_handlers_start
 from handlers.game import register_handlers_game
+from handlers.statistics import register_handlers_statistics
 
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
@@ -16,6 +17,7 @@ dp.shutdown.register(stop_autotests)
 dp.shutdown.register(stop_chart_updates)
 
 register_handlers_autotest(dp)
+register_handlers_statistics(dp)
 register_handlers_admin(dp)
 register_handlers_start(dp)
 register_handlers_game(dp)
