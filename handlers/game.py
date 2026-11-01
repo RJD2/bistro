@@ -42,6 +42,19 @@ def question_text(question: Question) -> str:
     )
 
 
+def result_text(question: Question, selected_choice: str) -> str:
+    options = question.options.split(",")
+    if len(options) == 2:
+        prompt = f"{options[0]} вы или {options[1]}"
+    else:
+        prompt = f"{options[0]} вы, {', '.join(options[1:-1])} или {options[-1]}"
+    return (
+        f"<b>{escape(capitalize_first(question.word))}</b>\n\n"
+        f"Это был быстротест {escape(prompt)}\n\n"
+        f"И вы {escape(selected_choice)}"
+    )
+
+
 def _personal_message_options(callback: types.CallbackQuery, *, replace: bool = False) -> dict:
     parameters = {
         "receiver_user_id": callback.from_user.id,
@@ -239,10 +252,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             stats = await get_question_statistics(qid, session)
 
         # Формируем подпись с выбранным ответом.
-        caption = (
-            f"<b>{escape(capitalize_first(question.word))}</b>\n\n"
-            f"Это был быстротест, вы {escape(selected_choice)}"
-        )
+        caption = result_text(question, selected_choice)
         chart = await to_thread(render_statistics_chart, stats)
         photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
         chart_key = statistics_key(stats)

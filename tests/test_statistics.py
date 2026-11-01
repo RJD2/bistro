@@ -153,7 +153,8 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     media.caption,
                     "<b>Камера NASA &amp; &lt;тест&gt;</b>\n\n"
-                    f"Это был быстротест, вы {escape(choice)}",
+                    f"Это был быстротест {escape(choice)} вы или велосипедист\n\n"
+                    f"И вы {escape(choice)}",
                 )
                 self.assertNotIn("Статистика ответов", media.caption)
                 self.assertNotIn("%", media.caption)
@@ -173,7 +174,10 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         message.edit_text.assert_awaited_once()
         text = message.edit_text.call_args.kwargs["text"]
         self.assertGreater(len(text), 1024)
-        self.assertEqual(text, f"<b>Камера NASA</b>\n\nЭто был быстротест, вы {choice}")
+        self.assertEqual(
+            text,
+            f"<b>Камера NASA</b>\n\nЭто был быстротест {choice} вы или велосипедист\n\nИ вы {choice}",
+        )
         self.assertNotIn("Статистика ответов", text)
         self.assertNotIn("%", text)
         self.assertIsNone(message.edit_text.call_args.kwargs["reply_markup"])

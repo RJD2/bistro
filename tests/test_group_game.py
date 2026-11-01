@@ -540,7 +540,9 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         choice = "длинный вариант & тест " * 60
         self.question = Question(id=1, word="камера NASA", options=f"{choice},преступник", associo="снимок,тюрьма")
         expected_text = (
-            "<b>Камера NASA</b>\n\nЭто был быстротест, вы "
+            "<b>Камера NASA</b>\n\nЭто был быстротест "
+            + choice.replace("&", "&amp;")
+            + " вы или преступник\n\nИ вы "
             + choice.replace("&", "&amp;")
         )
         self.assertGreater(len(expected_text), 1024)
