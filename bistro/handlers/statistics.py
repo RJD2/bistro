@@ -1,5 +1,4 @@
 from asyncio import to_thread
-from html import escape
 
 from aiogram import Dispatcher, F, types
 from aiogram.enums import ChatType
@@ -11,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bistro.charts import messages as chart_messages
 from bistro.charts.updates import recipient_guard, refresh_question_charts, statistics_key
 from bistro.database.session import async_session
-from bistro.handlers.game import _is_group, _personal_message_options, get_question_statistics
+from bistro.handlers.game import (
+    _is_group, _personal_message_options, get_question_statistics, result_text,
+)
 from bistro.database.models import Answer, Question, User
 from bistro.charts.rendering import render_statistics_chart
 from bistro.ui.telegram_ephemeral import EditEphemeralMessageText
@@ -131,7 +132,7 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
         question, choice = saved
         statistics = await get_question_statistics(question_id, session)
     await callback.answer()
-    caption = f"<b>{escape(capitalize_first(question.word))}</b>\n\nВаш выбор: {escape(choice)}"
+    caption = result_text(question, choice)
     chart = await to_thread(render_statistics_chart, statistics)
     photo = types.BufferedInputFile(chart, filename=f"statistics_{question_id}.png")
     result_keyboard = get_result_keyboard(question_id)

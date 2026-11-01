@@ -313,7 +313,8 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         photo, payload, files = self.requests("sendPhoto")[0]
         self.assertEqual(photo.caption, (
             "<b>Камера NASA &amp; &lt;тест&gt;</b>\n\n"
-            f"Ваш выбор: {escape(choice)}"
+            "Это был быстротест фотограф SQL &amp; художник вы или преступник\n\n"
+            f"И вы {escape(choice)}"
         ))
         self.assertEqual(photo.parse_mode, "HTML")
         self.assert_share_button(photo.reply_markup)
@@ -376,13 +377,25 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.forget.assert_awaited_once()
         self.assertEqual(self.requests("editMessageText"), [])
         self.transport.requests.clear()
-        self.configure_saved_choice()
+        self.question = Question(
+            id=1, word="массив", options="программист,лесник,хайкер,плотник",
+        )
+        self.get_statistics.return_value = {
+            "программист": 50.0, "лесник": 25.0, "хайкер": 25.0, "плотник": 0.0,
+        }
+        self.configure_saved_choice("программист")
 
         await self.feed_callback(
             f"statistics:word:{USER_ID}:1", chat_type=ChatType.SUPERGROUP, ephemeral_id=812,
         )
 
         photo, payload, _ = self.requests("sendPhoto")[0]
+        self.assertEqual(photo.caption, (
+            "<b>Массив</b>\n\n"
+            "Это был быстротест программист вы, лесник, хайкер или плотник\n\n"
+            "И вы программист"
+        ))
+        self.assertEqual(photo.parse_mode, "HTML")
         self.assert_share_button(photo.reply_markup)
         self.assertEqual(json.loads(payload["ephemeral_message_parameters"]), {
             "receiver_user_id": USER_ID, "callback_query_id": f"callback_{USER_ID}",
@@ -390,12 +403,14 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests("editEphemeralMessageMedia"), [])
         self.assertEqual(self.requests("editEphemeralMessageText"), [])
         self.assertEqual(self.remember.await_args.kwargs["receiver_user_id"], USER_ID)
+        self.assertEqual(self.remember.await_args.kwargs["caption"], photo.caption)
 
     async def test_long_saved_choice_keeps_full_text_with_a_separate_chart(self):
         choice = "старый вариант SQL & <тест> " * 60
         expected = (
             "<b>Камера NASA &amp; &lt;тест&gt;</b>\n\n"
-            f"Ваш выбор: {escape(choice)}"
+            "Это был быстротест фотограф SQL &amp; художник вы или преступник\n\n"
+            f"И вы {escape(choice)}"
         )
         for chat_type in (ChatType.PRIVATE, ChatType.SUPERGROUP):
             with self.subTest(chat_type=chat_type):
