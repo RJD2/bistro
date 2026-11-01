@@ -5,8 +5,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from models import Question
-from questions import available_questions, next_available_question, question_choices
+from bistro.database.models import Question
+from bistro.services.questions import available_questions, next_available_question, question_choices
 
 
 def scalar_result(value):
@@ -18,22 +18,22 @@ def scalar_result(value):
 class QuestionChoicesTests(unittest.TestCase):
     def test_associations_keep_their_position_and_whitespace_does_not_change_labels(self):
         question = Question(
-            word="цезарь", options="салат,Рим", associo=" повар , император ",
+            word="цезарь", options="повар,император", associo=" салат , Рим ",
         )
 
-        self.assertEqual(question_choices(question), ["повар", "император"])
-        self.assertEqual(question.options, "салат,Рим")
+        self.assertEqual(question_choices(question), ["салат", "Рим"])
+        self.assertEqual(question.options, "повар,император")
 
     def test_unfilled_and_ambiguous_mappings_are_unavailable(self):
         for options, associo in (
-            ("салат,Рим", None),
-            ("салат,Рим", ""),
-            ("салат,Рим", "повар"),
-            ("салат,Рим", "повар,император,полководец"),
-            ("салат,Рим", "повар,"),
-            ("салат,Рим", "повар,ПОВАР"),
-            ("салат,Рим", "повар,импе\nратор"),
-            ("салат,", "повар,император"),
+            ("повар,император", None),
+            ("повар,император", ""),
+            ("повар,император", "салат"),
+            ("повар,император", "салат,Рим,история"),
+            ("повар,император", "салат,"),
+            ("повар,император", "салат,САЛАТ"),
+            ("повар,император", "салат,Ри\nм"),
+            ("повар,", "салат,Рим"),
         ):
             with self.subTest(options=options, associo=associo):
                 with self.assertRaises(ValueError):
@@ -49,7 +49,7 @@ class QuestionChoicesTests(unittest.TestCase):
                 Question(word="пробелы", options="a,b", associo="  "),
                 Question(word="мало", options="a,b", associo="x"),
                 Question(word="много", options="a,b", associo="x,y,z"),
-                Question(word="цезарь", options="салат,Рим", associo="повар,император"),
+                Question(word="цезарь", options="повар,император", associo="салат,Рим"),
             ])
             session.commit()
 
@@ -61,7 +61,7 @@ class QuestionChoicesTests(unittest.TestCase):
 class NextAvailableQuestionTests(unittest.IsolatedAsyncioTestCase):
     async def test_malformed_legacy_question_does_not_block_later_complete_question(self):
         malformed = Question(id=3, word="старый", options="a,b", associo="x,X")
-        ready = Question(id=8, word="цезарь", options="салат,Рим", associo="повар,император")
+        ready = Question(id=8, word="цезарь", options="повар,император", associo="салат,Рим")
         session = AsyncMock(spec=AsyncSession)
         session.execute.side_effect = [scalar_result(malformed), scalar_result(ready)]
 

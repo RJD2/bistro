@@ -8,14 +8,14 @@ from aiogram.filters import Command
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import chart_messages
-from chart_updates import recipient_guard, refresh_question_charts, statistics_key
-from db import async_session
-from handlers.game import _is_group, _personal_message_options, get_question_statistics
-from models import Answer, Question, User
-from statistics_chart import render_statistics_chart
-from telegram_ephemeral import EditEphemeralMessageText
-from text_formatting import capitalize_first
+from bistro.charts import messages as chart_messages
+from bistro.charts.updates import recipient_guard, refresh_question_charts, statistics_key
+from bistro.database.session import async_session
+from bistro.handlers.game import _is_group, _personal_message_options, get_question_statistics
+from bistro.database.models import Answer, Question, User
+from bistro.charts.rendering import render_statistics_chart
+from bistro.ui.telegram_ephemeral import EditEphemeralMessageText
+from bistro.ui.text_formatting import capitalize_first
 
 
 STATISTICS_PAGE_SIZE = 10

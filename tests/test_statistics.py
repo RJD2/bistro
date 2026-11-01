@@ -13,9 +13,9 @@ from PIL import Image
 from matplotlib.patches import Patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from handlers import game
-from models import Question
-from statistics_chart import render_statistics_chart
+from bistro.handlers import game
+from bistro.database.models import Question
+from bistro.charts.rendering import render_statistics_chart
 
 
 class QuestionStatisticsTests(unittest.IsolatedAsyncioTestCase):
@@ -58,7 +58,7 @@ class StatisticsChartTests(unittest.TestCase):
     def test_legend_preserves_exact_choice_case_and_statistics(self):
         statistics = {"плотник": 0.0, "ВОЕНАЧАЛЬНИК NASA": 100.0, "пРоводник SQL": 0.0}
         original = statistics.copy()
-        with patch("statistics_chart.Patch", wraps=Patch) as legend_patch:
+        with patch("bistro.charts.rendering.Patch", wraps=Patch) as legend_patch:
             render_statistics_chart(statistics)
 
         self.assertEqual(

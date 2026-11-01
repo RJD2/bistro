@@ -1,13 +1,13 @@
-"""Keep the visible associations aligned with the stored result options."""
+"""Keep the visible associations aligned with the stored result options"""
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Question
+from bistro.database.models import Question
 
 
 def question_choices(question: Question) -> list[str]:
-    """Return associations only when every position has a matching result."""
+    """Return associations only when every position has a matching result"""
     if not isinstance(question.options, str) or not isinstance(question.associo, str):
         raise ValueError("У вопроса не заполнены ассоциации.")
     options = question.options.split(",")
@@ -24,7 +24,7 @@ def question_choices(question: Question) -> list[str]:
 
 
 def available_questions():
-    """Exclude unfilled and differently sized mappings before fetching rows."""
+    """Exclude unfilled and differently sized mappings before fetching rows"""
     choice_separators = func.length(Question.associo) - func.length(func.replace(Question.associo, ",", ""))
     option_separators = func.length(Question.options) - func.length(func.replace(Question.options, ",", ""))
     return and_(
@@ -36,7 +36,7 @@ def available_questions():
 
 
 async def next_available_question(session: AsyncSession, *conditions) -> Question | None:
-    """Skip malformed legacy rows without hiding later, complete questions."""
+    """Skip malformed legacy rows without hiding later, complete questions"""
     statement = select(Question).where(available_questions(), *conditions).order_by(Question.id).limit(1)
     while True:
         result = await session.execute(statement)

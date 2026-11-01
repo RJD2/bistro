@@ -1,11 +1,11 @@
-"""Restore the main menu using the chat's persisted Autotest setting."""
+"""Restore the main menu using the chat's persisted Autotest setting"""
 
 from aiogram.types import ReplyKeyboardMarkup
 from sqlalchemy import select
 
-from db import async_session
-from keyboards import get_main_menu
-from models import AutotestSubscription, GroupAutotestSubscription, User
+from bistro.database.session import async_session
+from bistro.ui.keyboards import get_main_menu
+from bistro.database.models import AutotestSubscription, GroupAutotestSubscription, User
 
 
 async def get_main_menu_for_chat(chat_id: int, *, is_admin: bool = False) -> ReplyKeyboardMarkup:

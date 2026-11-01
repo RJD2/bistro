@@ -31,7 +31,7 @@ def _gradient(start, end) -> np.ndarray:
 
 
 def render_statistics_chart(statistics: dict[str, float]) -> bytes:
-    """Render answer percentages as a PNG, including unselected choices in the legend."""
+    """Render answer percentages as a PNG, including unselected choices in the legend"""
     with _RENDER_LOCK:
         return _render_statistics_chart(statistics)
 

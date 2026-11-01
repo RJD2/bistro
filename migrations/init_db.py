@@ -1,12 +1,12 @@
 import asyncio
 from sqlalchemy import inspect
 
-from db import engine
-from models import Base
+from bistro.database.session import engine
+from bistro.database.models import Base
 
 
 def upgrade_questions_associo(connection):
-    """Upgrade existing questions without replacing rows or saved answers."""
+    """Upgrade existing questions without replacing rows or saved answers"""
     columns = {column["name"]: column for column in inspect(connection).get_columns("questions")}
     if "associo" not in columns:
         # PostgreSQL supports IF NOT EXISTS for concurrent container startups.

@@ -1,4 +1,4 @@
-"""Persisted daily questions, independent of the interactive game's FSM."""
+"""Persisted daily questions, independent of the interactive game's FSM"""
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -11,14 +11,14 @@ from aiogram.exceptions import (
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from db import async_session
-from handlers.game import get_or_create_user, question_text
-from keyboards import get_keyboard
-from models import (
+from bistro.database.session import async_session
+from bistro.handlers.game import get_or_create_user, question_text
+from bistro.ui.keyboards import get_keyboard
+from bistro.database.models import (
     Answer, AutotestDelivery, AutotestSubscription, GroupAutotestDelivery,
     GroupAutotestSubscription, Question, User,
 )
-from questions import next_available_question, question_choices
+from bistro.services.questions import next_available_question, question_choices
 
 
 logger = logging.getLogger(__name__)

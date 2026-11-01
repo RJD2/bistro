@@ -10,12 +10,12 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
-import config
-from db import async_session
-from menus import get_main_menu_for_chat
-from models import Question
-from states import AssocioCreationStates, BulkQuestionCreationStates, QuestionCreationStates
-from text_formatting import capitalize_first
+from bistro import config
+from bistro.database.session import async_session
+from bistro.ui.menus import get_main_menu_for_chat
+from bistro.database.models import Question
+from bistro.handlers.states import AssocioCreationStates, BulkQuestionCreationStates, QuestionCreationStates
+from bistro.ui.text_formatting import capitalize_first
 
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def _associo_prompt(word: str, options: list[str]) -> str:
         + "\n".join(f"{index}. {option}" for index, option in enumerate(options, 1))
         + f"\n\nОтправьте ровно {len(options)} ассоциаций (associo) через запятую, "
         "каждая до 64 символов. Пользователь выбирает ассоциацию и получает результат на той же позиции.\n"
-        "Например: для «салат,Рим» — «повар,император».\n\nДля отмены — /cancel."
+        "Например: для «повар,император» — «салат,Рим».\n\nДля отмены — /cancel."
     )
 
 
@@ -190,7 +190,7 @@ def _bulk_preview_chunks(questions: list[dict]) -> list[str]:
             + _mapping_preview(question["options"], question["associo"])
             + "\n\n"
         )
-        # Telegram считает длину сообщения в кодовых единицах UTF-16.
+        # Telegram measures message length in UTF-16 code units.
         if len((current + section).encode("utf-16-le")) // 2 > 3500:
             chunks.append(current.rstrip())
             current = ""
@@ -204,7 +204,7 @@ async def _remove_keyboard(message: types.Message) -> None:
     try:
         await message.edit_reply_markup(reply_markup=None)
     except TelegramBadRequest:
-        # Сообщение уже могло быть изменено или удалено.
+        # The message may have already been edited or deleted.
         pass
 
 
@@ -247,7 +247,7 @@ async def receive_question_word(message: types.Message, state: FSMContext):
     await state.set_state(QuestionCreationStates.waiting_for_options)
     await message.answer(
         "Теперь отправьте от 2 до 8 результатов (options) через запятую, каждый до 64 символов.\n"
-        "Например: салат, Рим\n\nДля отмены — /cancel."
+        "Например: повар, император\n\nДля отмены — /cancel."
     )
 
 

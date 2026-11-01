@@ -1,4 +1,4 @@
-"""Refresh every displayed copy of a question's statistics, preserving captions."""
+"""Refresh every displayed copy of a question's statistics, preserving captions"""
 
 from asyncio import Lock, Task, create_task, gather, sleep, to_thread
 from contextlib import asynccontextmanager
@@ -12,10 +12,10 @@ from aiogram.exceptions import (
     TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter,
 )
 
-import chart_messages
-from db import async_session
-from statistics_chart import render_statistics_chart
-from telegram_ephemeral import EditEphemeralMessageMedia
+from bistro.charts import messages as chart_messages
+from bistro.database.session import async_session
+from bistro.charts.rendering import render_statistics_chart
+from bistro.ui.telegram_ephemeral import EditEphemeralMessageMedia
 
 
 logger = logging.getLogger(__name__)

@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
-import autotest
-import config
+from bistro.services import autotest
+from bistro import config
 
 
 class AutotestLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_polling_startup_starts_one_sender_and_shutdown_waits_for_cancellation(self):
         spec = importlib.util.spec_from_file_location(
-            "bistro_autotest_application", Path(__file__).resolve().parents[1] / "bot.py",
+            "bistro_autotest_application", Path(__file__).resolve().parents[1] / "bistro" / "bot.py",
         )
         application = importlib.util.module_from_spec(spec)
         with patch.object(config, "TOKEN", "123456:offline-test-token"):

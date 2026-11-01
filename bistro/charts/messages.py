@@ -1,15 +1,15 @@
-"""Persist displayed chart targets so later answers can refresh their media.
+"""Persist displayed chart targets so later answers can refresh their media
 
 Ephemeral identifiers can be reused by Telegram. Every newly sent ephemeral
-message must replace or forget its old registration, including non-chart replies.
+message must replace or forget its old registration, including non-chart replies
 """
 
 from aiogram import types
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from db import async_session
-from models import ChartMessage
+from bistro.database.session import async_session
+from bistro.database.models import ChartMessage
 
 
 _TARGET_FIELDS = (

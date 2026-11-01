@@ -14,10 +14,10 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
-from handlers import admin, start
-from keyboards import get_main_menu
-from states import BulkQuestionCreationStates, QuestionCreationStates
+from bistro import config
+from bistro.handlers import admin, start
+from bistro.ui.keyboards import get_main_menu
+from bistro.handlers.states import BulkQuestionCreationStates, QuestionCreationStates
 
 
 OWNER_ID = 109252838

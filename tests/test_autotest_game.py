@@ -10,10 +10,10 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
-from handlers import admin, game, start
-from models import Answer, Question, User
-from states import GameStates, QuestionCreationStates
+from bistro import config
+from bistro.handlers import admin, game, start
+from bistro.database.models import Answer, Question, User
+from bistro.handlers.states import GameStates, QuestionCreationStates
 
 
 USER_ID = 123456789
@@ -147,9 +147,9 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_association_position_maps_to_result_and_statistics_identity(self):
         self.question = Question(
-            id=17, word="цезарь", options="салат,Рим", associo="повар,император",
+            id=17, word="цезарь", options="повар,император", associo="салат,Рим",
         )
-        for option, expected in ((0, "салат"), (1, "Рим")):
+        for option, expected in ((0, "повар"), (1, "император")):
             with self.subTest(association=self.question.associo.split(",")[option]):
                 self.session.add.reset_mock()
                 self.transport.reset_mock()
@@ -159,8 +159,8 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.session.add.call_args.args[0].choice, expected)
                 result = self.api_methods()[-1]
                 self.assertIn(f"вы {expected}", result.media.caption)
-                self.assertNotIn("повар", result.media.caption)
-                self.assertNotIn("император", result.media.caption)
+                self.assertNotIn("салат", result.media.caption)
+                self.assertNotIn("Рим", result.media.caption)
 
     async def test_question_with_incomplete_associations_cannot_record_a_vote(self):
         for associo in (None, "", "  ", "снимок", "снимок,тюрьма,комната", "снимок,", "снимок,СНИМОК"):
@@ -196,7 +196,7 @@ class AutotestMenuTests(unittest.IsolatedAsyncioTestCase):
         session.execute.return_value = result
         factory = MagicMock()
         factory.return_value.__aenter__.return_value = session
-        with patch.object(config, "ADMIN_ID", USER_ID), patch("menus.async_session", factory):
+        with patch.object(config, "ADMIN_ID", USER_ID), patch("bistro.ui.menus.async_session", factory):
             for user_id, chat_type, visible in (
                 (USER_ID, ChatType.PRIVATE, True),
                 (USER_ID + 1, ChatType.PRIVATE, True),

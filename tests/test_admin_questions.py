@@ -19,11 +19,11 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
-from handlers import admin, game, start
-from keyboards import get_main_menu
-from models import Question
-from states import QuestionCreationStates
+from bistro import config
+from bistro.handlers import admin, game, start
+from bistro.ui.keyboards import get_main_menu
+from bistro.database.models import Question
+from bistro.handlers.states import QuestionCreationStates
 
 
 OWNER_ID = 109252838
@@ -273,7 +273,7 @@ class AdminQuestionsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_concurrent_confirmation_updates_save_once_and_leave_no_draft(self):
         spec = importlib.util.spec_from_file_location(
-            "bistro_test_application", Path(__file__).resolve().parents[1] / "bot.py"
+            "bistro_test_application", Path(__file__).resolve().parents[1] / "bistro" / "bot.py"
         )
         application = importlib.util.module_from_spec(spec)
         with patch.object(config, "TOKEN", "123456:dummy-token-for-offline-tests"):

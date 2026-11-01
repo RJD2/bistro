@@ -15,10 +15,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import chart_updates
-from handlers import game
-from models import Answer, Question, User
-from states import GameStates
+from bistro.charts import updates as chart_updates
+from bistro.handlers import game
+from bistro.database.models import Answer, Question, User
+from bistro.handlers.states import GameStates
 
 
 CHAT_ID = -100123456789
@@ -26,7 +26,7 @@ PNG = b"\x89PNG\r\n\x1a\nchart"
 
 
 class RecordingSession(BaseSession):
-    """Exercise aiogram methods and serialization without contacting Telegram."""
+    """Exercise aiogram methods and serialization without contacting Telegram"""
 
     def __init__(self):
         super().__init__()

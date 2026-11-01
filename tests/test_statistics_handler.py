@@ -15,10 +15,10 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from handlers import admin, statistics
-from keyboards import get_main_menu
-from models import Answer, Question, User
-from states import GameStates, QuestionCreationStates
+from bistro.handlers import admin, statistics
+from bistro.ui.keyboards import get_main_menu
+from bistro.database.models import Answer, Question, User
+from bistro.handlers.states import GameStates, QuestionCreationStates
 
 
 USER_ID = 222
@@ -27,7 +27,7 @@ PNG = b"\x89PNG\r\n\x1a\nstatistics"
 
 
 class RecordingSession(BaseSession):
-    """Record real aiogram requests without contacting Telegram."""
+    """Record real aiogram requests without contacting Telegram"""
 
     def __init__(self):
         super().__init__()

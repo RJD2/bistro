@@ -1,8 +1,8 @@
 from aiogram import types, Dispatcher
 from aiogram.filters import Command
-from messages import MESSAGES
-import config
-from menus import get_main_menu_for_chat
+from bistro.ui.messages import MESSAGES
+from bistro import config
+from bistro.ui.menus import get_main_menu_for_chat
 
 
 def is_owner_chat(message: types.Message) -> bool:

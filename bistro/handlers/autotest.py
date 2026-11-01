@@ -5,9 +5,9 @@ from aiogram.enums import ChatType
 from aiogram.filters import Command
 from sqlalchemy.exc import SQLAlchemyError
 
-from autotest import toggle_group_subscription, toggle_subscription
-from handlers.start import is_owner_chat
-from keyboards import AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON, get_main_menu
+from bistro.services.autotest import toggle_group_subscription, toggle_subscription
+from bistro.handlers.start import is_owner_chat
+from bistro.ui.keyboards import AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON, get_main_menu
 
 
 logger = logging.getLogger(__name__)

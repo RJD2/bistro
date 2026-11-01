@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
-from text_formatting import capitalize_first
+from bistro.ui.text_formatting import capitalize_first
 
 
 AUTOTEST_OFF_BUTTON = "⏰ Автотест"

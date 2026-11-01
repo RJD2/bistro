@@ -13,8 +13,8 @@ from aiogram.methods import SendMessage
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import autotest
-from models import GroupAutotestDelivery, GroupAutotestSubscription, Question
+from bistro.services import autotest
+from bistro.database.models import GroupAutotestDelivery, GroupAutotestSubscription, Question
 
 
 NOW = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)

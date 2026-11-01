@@ -16,7 +16,7 @@ from aiogram.exceptions import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import chart_updates
+from bistro.charts import updates as chart_updates
 
 
 PNG = b"\x89PNG\r\n\x1a\nnew statistics"

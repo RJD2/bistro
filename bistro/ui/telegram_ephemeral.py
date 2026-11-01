@@ -1,4 +1,4 @@
-"""Bot API 10.3 methods not yet included in the pinned aiogram version.
+"""Bot API 10.3 methods not yet included in the pinned aiogram version
 
 SendMessage/SendPhoto already forward ephemeral_message_parameters via **kwargs.
 https://core.telegram.org/bots/api#ephemeralmessageparameters

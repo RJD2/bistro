@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from migrations.add_questions import QUESTIONS
 from migrations.init_db import upgrade_questions_associo
-from models import Base, Question
+from bistro.database.models import Base, Question
 
 
 class QuestionMigrationTests(unittest.TestCase):
@@ -110,7 +110,7 @@ class QuestionMigrationTests(unittest.TestCase):
                 connection.exec_driver_sql(
                     "SELECT options, associo FROM questions WHERE word = 'цезарь'"
                 ).one(),
-                ("салат,Рим", "повар,император"),
+                ("повар,император", "салат,Рим"),
             )
             self.assertEqual(connection.exec_driver_sql("SELECT COUNT(*) FROM questions WHERE associo = ''").scalar(), 3)
             connection.exec_driver_sql("UPDATE questions SET associo = 'ключ,крепость' WHERE word = 'замок'")

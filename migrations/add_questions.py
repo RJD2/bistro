@@ -1,12 +1,12 @@
 import asyncio
 from sqlalchemy.dialects.postgresql import insert
 
-from db import async_session
-from models import Question
+from bistro.database.session import async_session
+from bistro.database.models import Question
 
 
 QUESTIONS = [
-    {"word": "цезарь", "options": "салат,Рим", "associo": "повар,император"},
+    {"word": "цезарь", "options": "повар,император", "associo": "салат,Рим"},
     {"word": "замок", "options": "слесарь,рыцарь", "associo": ""},
     {"word": "камера", "options": "фотограф,велосипедист,преступник", "associo": ""},
     {"word": "ультрамарин", "options": "космодесантник,художник", "associo": ""},

@@ -8,21 +8,21 @@ from aiogram.filters import Command, StateFilter
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-import chart_messages
-from chart_updates import recipient_guard, refresh_question_charts, statistics_key
-from db import async_session
-from models import User, Answer, Question
-from questions import next_available_question, question_choices
-from states import GameStates
-from keyboards import get_keyboard
-from messages import MESSAGES
-from statistics_chart import render_statistics_chart
-from telegram_ephemeral import EditEphemeralMessageMedia, EditEphemeralMessageText
-from text_formatting import capitalize_first
+from bistro.charts import messages as chart_messages
+from bistro.charts.updates import recipient_guard, refresh_question_charts, statistics_key
+from bistro.database.session import async_session
+from bistro.database.models import User, Answer, Question
+from bistro.services.questions import next_available_question, question_choices
+from bistro.handlers.states import GameStates
+from bistro.ui.keyboards import get_keyboard
+from bistro.ui.messages import MESSAGES
+from bistro.charts.rendering import render_statistics_chart
+from bistro.ui.telegram_ephemeral import EditEphemeralMessageMedia, EditEphemeralMessageText
+from bistro.ui.text_formatting import capitalize_first
 
 
 async def get_or_create_user(tg_id: int, session: AsyncSession):
-    # Один пользователь может одновременно прийти из разных чатов.
+    # The same user may interact from multiple chats at the same time.
     await session.execute(
         insert(User).values(tg_id=tg_id).on_conflict_do_nothing(index_elements=[User.tg_id])
     )
@@ -89,7 +89,7 @@ async def _show_group_result(
                 ))
                 chart_message = message
             else:
-                # Заменяем общий вопрос только в клиенте ответившего участника.
+                # Replace the shared question only for the participant who answered.
                 chart_message = await message.answer_photo(
                     photo=photo,
                     caption=caption,
@@ -121,11 +121,11 @@ async def start_game(message: types.Message, state: FSMContext):
     async with async_session() as session:
         user = await get_or_create_user(message.from_user.id, session)
 
-        # Находим уже отвеченные вопросы
+        # Find questions the user has already answered.
         result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
         answered_ids = {row[0] for row in result.all()}
 
-        # Первый неотвеченный вопрос
+        # Select the first unanswered question.
         question = await next_available_question(session, ~Question.id.in_(answered_ids))
 
         if not question:
@@ -145,7 +145,7 @@ async def start_game(message: types.Message, state: FSMContext):
 
 
 async def get_question_statistics(question_id: int, session: AsyncSession) -> dict[str, float]:
-    # Подсчет количества ответов для каждого варианта
+    # Count answers for each option.
     result = await session.execute(
         select(Answer.choice, func.count(Answer.choice))
         .where(Answer.question_id == question_id)
@@ -157,12 +157,12 @@ async def get_question_statistics(question_id: int, session: AsyncSession) -> di
     if total_count == 0:
         return {}
 
-    # Сохраняем порядок вариантов, включая те, которые еще никто не выбрал.
+    # Preserve option order, including options that nobody has selected yet.
     question = await session.get(Question, question_id)
     if question is not None:
         choices_count = {**dict.fromkeys(question.options.split(","), 0), **choices_count}
 
-    # Вычисление процентов
+    # Calculate percentages.
     percentages = {
         choice: (count / total_count) * 100
         for choice, count in choices_count.items()
@@ -183,7 +183,7 @@ async def reset_progress(message: types.Message, state: FSMContext):
         )
         affected_questions = [row[0] for row in result.all()]
 
-        # Удаляем все ответы пользователя
+        # Delete all of the user's answers.
         stmt = delete(Answer).where(Answer.user_id == user.id)
         await session.execute(stmt)
         await session.commit()
@@ -228,8 +228,8 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         options = question.options.split(",")
 
         user = await get_or_create_user(callback.from_user.id, session)
-        # Блокировка строки пользователя защищает от повторных голосов даже
-        # при одновременных нажатиях в разных чатах или процессах бота.
+        # Lock the user row to prevent duplicate votes, even when callbacks
+        # arrive concurrently from different chats or bot processes.
         await session.get(User, user.id, with_for_update=True)
         result = await session.execute(
             select(Answer).where(Answer.user_id == user.id, Answer.question_id == qid).order_by(Answer.id)
@@ -244,14 +244,14 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
     chart = None
     try:
         if is_group:
-            # Короткий персональный ответ доступен сразу, до построения графика.
+            # Show a short personal result immediately, before rendering the chart.
             await callback.answer(f"Это был быстротест, вы {selected_choice}"[:200], cache_time=0)
         else:
             await callback.answer()
         async with async_session() as session:
             stats = await get_question_statistics(qid, session)
 
-        # Формируем подпись с выбранным ответом.
+        # Build the caption with the selected answer.
         caption = result_text(question, selected_choice)
         chart = await to_thread(render_statistics_chart, stats)
         photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
@@ -259,8 +259,8 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
 
         if is_group:
             await _show_group_result(callback, caption, photo, question_id=qid, chart_key=chart_key)
-            # Следующий общий вопрос появится только по «🎮 Быстротест» / /play.
-            # finally по-прежнему обновит диаграммы остальных участников.
+            # The next shared question requires the game button or /play.
+            # The finally block still refreshes charts for other participants.
             return
         else:
             async with recipient_guard(callback.bot.id, message.chat.id, 0):
@@ -272,7 +272,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
                     chart_message = message
                     chart_caption, parse_mode = caption, "HTML"
                 else:
-                    # Длинный результат не поместится в подпись к фото Telegram.
+                    # A long result exceeds Telegram's photo caption limit.
                     await message.edit_text(text=caption, parse_mode="HTML", reply_markup=None)
                     chart_caption = f"📊 {capitalize_first(question.word)}"
                     parse_mode = None
@@ -290,7 +290,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             # or changing a draft/the current game stored in the FSM.
             return
 
-        # Ищем следующий вопрос
+        # Find the next question.
         async with async_session() as session:
             result = await session.execute(select(Answer.question_id).where(Answer.user_id == user.id))
             answered_ids = {row[0] for row in result.all()}

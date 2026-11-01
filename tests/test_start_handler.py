@@ -10,11 +10,11 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
-import menus
-from handlers import admin, autotest, game, start
-from keyboards import AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON
-from states import AssocioCreationStates, BulkQuestionCreationStates, GameStates, QuestionCreationStates
+from bistro import config
+from bistro.ui import menus
+from bistro.handlers import admin, autotest, game, start
+from bistro.ui.keyboards import AUTOTEST_OFF_BUTTON, AUTOTEST_ON_BUTTON
+from bistro.handlers.states import AssocioCreationStates, BulkQuestionCreationStates, GameStates, QuestionCreationStates
 
 
 USER_ID = 123456789

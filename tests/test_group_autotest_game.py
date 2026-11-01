@@ -12,8 +12,8 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from handlers import game
-from models import Answer, Question, User
+from bistro.handlers import game
+from bistro.database.models import Answer, Question, User
 
 
 CHAT_ID = -100123456789

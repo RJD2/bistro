@@ -9,8 +9,8 @@ from aiogram import types
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import chart_messages
-from models import ChartMessage
+from bistro.charts import messages as chart_messages
+from bistro.database.models import ChartMessage
 
 
 BOT_ID = 123456

@@ -10,8 +10,8 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.exc import SQLAlchemyError
 
-from handlers import admin, autotest
-from states import QuestionCreationStates
+from bistro.handlers import admin, autotest
+from bistro.handlers.states import QuestionCreationStates
 
 
 USER_ID = 123456789
