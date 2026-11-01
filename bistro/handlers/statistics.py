@@ -133,7 +133,7 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
         statistics = await get_question_statistics(question_id, session)
     await callback.answer()
     caption = result_text(question, choice)
-    chart = await to_thread(render_statistics_chart, statistics)
+    chart = await to_thread(render_statistics_chart, statistics, selected_choice=choice)
     photo = types.BufferedInputFile(chart, filename=f"statistics_{question_id}.png")
     result_keyboard = await get_result_keyboard(callback.bot, choice, question_id)
     message = callback.message
@@ -155,11 +155,12 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
             bot_id=callback.bot.id, question_id=question_id, message=chart_message,
             receiver_user_id=receiver_id, caption=chart_caption,
             parse_mode=parse_mode, statistics_key=statistics_key(statistics),
-            reply_markup=result_keyboard,
+            reply_markup=result_keyboard, selected_choice=choice,
         )
     # Catch answers that arrived while this chart was being rendered or sent.
     await refresh_question_charts(
         callback.bot, question_id, get_question_statistics, statistics=statistics, chart=chart,
+        selected_choice=choice,
     )
 
 

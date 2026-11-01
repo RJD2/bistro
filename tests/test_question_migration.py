@@ -9,7 +9,10 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.dialects.postgresql import insert
 
 from migrations.add_questions import QUESTIONS
-from migrations.init_db import upgrade_chart_messages_reply_markup, upgrade_questions_associo
+from migrations.init_db import (
+    upgrade_chart_messages_reply_markup, upgrade_chart_messages_selected_choice,
+    upgrade_questions_associo,
+)
 from bistro.database.models import Base, Question
 
 
@@ -107,6 +110,46 @@ class QuestionMigrationTests(unittest.TestCase):
             upgrade_chart_messages_reply_markup(connection)
         connection.exec_driver_sql.assert_called_once_with(
             "ALTER TABLE chart_messages ADD COLUMN IF NOT EXISTS reply_markup VARCHAR"
+        )
+
+    def test_highlight_upgrade_preserves_legacy_cards_and_is_repeatable(self):
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE chart_messages (id INTEGER PRIMARY KEY, caption VARCHAR, "
+                "statistics_key VARCHAR NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO chart_messages VALUES (1, 'Вы император', 'previous')"
+            )
+            upgrade_chart_messages_selected_choice(connection)
+            upgrade_chart_messages_selected_choice(connection)
+            self.assertEqual(connection.exec_driver_sql(
+                "SELECT caption, statistics_key, selected_choice FROM chart_messages"
+            ).one(), ("Вы император", "previous", None))
+            connection.exec_driver_sql(
+                "UPDATE chart_messages SET selected_choice = 'император' WHERE id = 1"
+            )
+            upgrade_chart_messages_selected_choice(connection)
+            self.assertEqual(connection.exec_driver_sql(
+                "SELECT selected_choice FROM chart_messages WHERE id = 1"
+            ).scalar_one(), "император")
+
+    def test_fresh_database_has_nullable_highlight_and_accepts_repeat_upgrade(self):
+        with self.engine.begin() as connection:
+            Base.metadata.create_all(connection)
+            upgrade_chart_messages_selected_choice(connection)
+            upgrade_chart_messages_selected_choice(connection)
+            columns = {column["name"]: column for column in inspect(connection).get_columns("chart_messages")}
+            self.assertTrue(columns["selected_choice"]["nullable"])
+
+    def test_postgres_highlight_upgrade_handles_concurrent_startup(self):
+        connection = MagicMock(dialect=SimpleNamespace(name="postgresql"))
+        inspector = MagicMock()
+        inspector.get_columns.return_value = [{"name": "id"}]
+        with patch("migrations.init_db.inspect", return_value=inspector):
+            upgrade_chart_messages_selected_choice(connection)
+        connection.exec_driver_sql.assert_called_once_with(
+            "ALTER TABLE chart_messages ADD COLUMN IF NOT EXISTS selected_choice VARCHAR"
         )
 
     def test_manually_added_nullable_column_keeps_values_and_normalizes_null(self):

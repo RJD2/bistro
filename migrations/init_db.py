@@ -37,11 +37,22 @@ def upgrade_chart_messages_reply_markup(connection):
         )
 
 
+def upgrade_chart_messages_selected_choice(connection):
+    """Preserve each result card's highlighted answer across chart refreshes"""
+    columns = {column["name"] for column in inspect(connection).get_columns("chart_messages")}
+    if "selected_choice" not in columns:
+        if_not_exists = "IF NOT EXISTS " if connection.dialect.name == "postgresql" else ""
+        connection.exec_driver_sql(
+            f"ALTER TABLE chart_messages ADD COLUMN {if_not_exists}selected_choice VARCHAR"
+        )
+
+
 async def init():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(upgrade_questions_associo)
         await conn.run_sync(upgrade_chart_messages_reply_markup)
+        await conn.run_sync(upgrade_chart_messages_selected_choice)
 
 
 if __name__ == "__main__":

@@ -88,4 +88,6 @@ class ChartMessage(Base):
     caption = Column(String, nullable=True)
     parse_mode = Column(String, nullable=True)
     reply_markup = Column(String, nullable=True)
+    # Keep the highlighted result with the card's personal caption after resets.
+    selected_choice = Column(String, nullable=True)
     statistics_key = Column(String, nullable=False)

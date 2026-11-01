@@ -64,7 +64,7 @@ class StatisticsChartTests(unittest.TestCase):
 
         self.assertEqual(
             [call.kwargs["label"] for call in legend_patch.call_args_list],
-            ["плотник: 0%", "ВОЕНАЧАЛЬНИК NASA: 100%", "пРоводник SQL: 0%"],
+            ["плотник", "ВОЕНАЧАЛЬНИК NASA", "пРоводник SQL"],
         )
         self.assertEqual(statistics, original)
 
@@ -128,12 +128,15 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
             patch.object(game, "get_or_create_user", AsyncMock(return_value=SimpleNamespace(id=7))),
             patch.object(game, "get_question_statistics", side_effect=get_saved_statistics),
             patch.object(game, "render_statistics_chart", return_value=png) as renderer,
-            patch.object(game.chart_messages, "remember_chart", AsyncMock()),
+            patch.object(game.chart_messages, "remember_chart", AsyncMock()) as remember,
             patch.object(game.chart_messages, "forget_message", AsyncMock()),
-            patch.object(game, "refresh_question_charts", AsyncMock()),
+            patch.object(game, "refresh_question_charts", AsyncMock()) as refresh,
         ):
             await game.process_answer(callback, state)
-            renderer.assert_called_once_with(statistics)
+            renderer.assert_called_once_with(statistics, selected_choice=question.options.split(",")[0])
+            self.assertEqual(remember.await_args.kwargs["selected_choice"], question.options.split(",")[0])
+            self.assertEqual(refresh.await_args.kwargs["selected_choice"], question.options.split(",")[0])
+            self.assertEqual(refresh.await_args.kwargs["chart"], png)
 
         callback.answer.assert_awaited_once()
         return session, message, state, png

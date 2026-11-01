@@ -58,6 +58,7 @@ async def remember_chart(
     parse_mode: str | None,
     statistics_key: str,
     reply_markup: types.InlineKeyboardMarkup | None = None,
+    selected_choice: str | None = None,
 ) -> None:
     target = _message_target(bot_id, message, receiver_user_id)
     if target is None:
@@ -69,6 +70,7 @@ async def remember_chart(
         parse_mode=parse_mode,
         reply_markup=reply_markup.model_dump_json(exclude_none=True) if reply_markup else None,
         statistics_key=statistics_key,
+        selected_choice=selected_choice,
     )
     statement = statement.on_conflict_do_update(
         index_elements=list(_TARGET_FIELDS),
@@ -78,6 +80,7 @@ async def remember_chart(
             "parse_mode": statement.excluded.parse_mode,
             "reply_markup": statement.excluded.reply_markup,
             "statistics_key": statement.excluded.statistics_key,
+            "selected_choice": statement.excluded.selected_choice,
         },
     )
     async with async_session() as session:
@@ -121,6 +124,7 @@ def _snapshot_conditions(chart: ChartMessage) -> tuple:
         ChartMessage.caption == chart.caption,
         ChartMessage.parse_mode == chart.parse_mode,
         ChartMessage.reply_markup == chart.reply_markup,
+        ChartMessage.selected_choice == chart.selected_choice,
     )
 
 

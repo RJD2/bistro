@@ -330,9 +330,10 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests("editMessageText"), [])
         self.assertEqual(self.requests("editMessageMedia"), [])
         self.get_statistics.assert_awaited_once_with(1, self.session)
-        self.renderer.assert_called_once_with(self.get_statistics.return_value)
+        self.renderer.assert_called_once_with(self.get_statistics.return_value, selected_choice=choice)
         registration = self.remember.await_args.kwargs
         self.assertEqual(registration["question_id"], 1)
+        self.assertEqual(registration["selected_choice"], choice)
         self.assertEqual(registration["receiver_user_id"], 0)
         self.assertEqual(registration["caption"], photo.caption)
         self.assertEqual(registration["parse_mode"], "HTML")
@@ -411,6 +412,10 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests("editEphemeralMessageText"), [])
         self.assertEqual(self.remember.await_args.kwargs["receiver_user_id"], USER_ID)
         self.assertEqual(self.remember.await_args.kwargs["caption"], photo.caption)
+        self.assertEqual(self.remember.await_args.kwargs["selected_choice"], "программист")
+        self.renderer.assert_called_once_with(
+            self.get_statistics.return_value, selected_choice="программист",
+        )
 
     async def test_long_saved_choice_keeps_full_text_with_a_separate_chart(self):
         choice = "старый вариант SQL & <тест> " * 60
@@ -436,6 +441,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.remember.await_args.kwargs["reply_markup"], photo.reply_markup)
                 self.assertIsNone(self.remember.await_args.kwargs["caption"])
                 self.assertIsNone(self.remember.await_args.kwargs["parse_mode"])
+                self.assertEqual(self.remember.await_args.kwargs["selected_choice"], choice)
                 if chat_type == ChatType.SUPERGROUP:
                     for payload in (text_payload, photo_payload):
                         self.assertEqual(json.loads(payload["ephemeral_message_parameters"]), {

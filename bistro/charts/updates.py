@@ -90,6 +90,7 @@ async def refresh_question_charts(
     *,
     statistics: dict[str, float] | None = None,
     chart: bytes | None = None,
+    selected_choice: str | None = None,
 ) -> None:
     async with _guard(("question", bot.id, question_id)):
         targets = await chart_messages.list_charts(bot.id, question_id)
@@ -102,8 +103,11 @@ async def refresh_question_charts(
         current_key = statistics_key(current_statistics)
         if all(target.statistics_key == current_key for target in targets):
             return
-        if chart is None or statistics is None or statistics_key(statistics) != current_key:
-            chart = await to_thread(render_statistics_chart, current_statistics)
+        # Only reuse a supplied image for the recipient choice it was drawn for.
+        # Other players may have the same percentages but a different highlight.
+        charts: dict[str | None, bytes] = {}
+        if chart is not None and statistics is not None and statistics_key(statistics) == current_key:
+            charts[selected_choice] = chart
 
         for snapshot in targets:
             async with recipient_guard(bot.id, snapshot.chat_id, snapshot.receiver_user_id):
@@ -114,8 +118,13 @@ async def refresh_question_charts(
                     or target.question_id != question_id or target.statistics_key == current_key
                 ):
                     continue
+                choice = getattr(target, "selected_choice", None)
+                if choice not in charts:
+                    charts[choice] = await to_thread(
+                        render_statistics_chart, current_statistics, selected_choice=choice,
+                    )
                 media = types.InputMediaPhoto(
-                    media=types.BufferedInputFile(chart, filename=f"statistics_{question_id}.png"),
+                    media=types.BufferedInputFile(charts[choice], filename=f"statistics_{question_id}.png"),
                     caption=target.caption,
                     parse_mode=target.parse_mode,
                 )

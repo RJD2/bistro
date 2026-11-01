@@ -73,6 +73,7 @@ async def _show_group_result(
     *,
     question_id: int,
     chart_key: str,
+    selected_choice: str,
     reply_markup: types.InlineKeyboardMarkup,
 ):
     message = callback.message
@@ -118,7 +119,7 @@ async def _show_group_result(
             bot_id=callback.bot.id, question_id=question_id, message=chart_message,
             receiver_user_id=callback.from_user.id, caption=chart_caption,
             parse_mode=parse_mode, statistics_key=chart_key,
-            reply_markup=reply_markup,
+            reply_markup=reply_markup, selected_choice=selected_choice,
         )
 
 
@@ -284,7 +285,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
 
         # Build the caption with the selected answer.
         caption = result_text(question, selected_choice)
-        chart = await to_thread(render_statistics_chart, stats)
+        chart = await to_thread(render_statistics_chart, stats, selected_choice=selected_choice)
         photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
         chart_key = statistics_key(stats)
         result_keyboard = await get_result_keyboard(callback.bot, selected_choice, qid)
@@ -292,7 +293,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         if is_group:
             await _show_group_result(
                 callback, caption, photo, question_id=qid, chart_key=chart_key,
-                reply_markup=result_keyboard,
+                selected_choice=selected_choice, reply_markup=result_keyboard,
             )
             # The next shared question requires the game button or /play.
             # The finally block still refreshes charts for other participants.
@@ -319,7 +320,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
                     bot_id=callback.bot.id, question_id=qid, message=chart_message,
                     receiver_user_id=0, caption=chart_caption,
                     parse_mode=parse_mode, statistics_key=chart_key,
-                    reply_markup=result_keyboard,
+                    reply_markup=result_keyboard, selected_choice=selected_choice,
                 )
 
         if action == "autotest_answer":
@@ -351,6 +352,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         # result or next question could not be delivered.
         await refresh_question_charts(
             callback.bot, qid, get_question_statistics, statistics=stats, chart=chart,
+            selected_choice=selected_choice,
         )
 
 

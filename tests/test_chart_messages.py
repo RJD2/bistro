@@ -44,9 +44,10 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(active_patch.stop)
 
     async def remember(self, source, *, question_id=1, receiver=111, caption="Вы салат", key="first",
-                       reply_markup=None):
+                       reply_markup=None, selected_choice=None):
         await chart_messages.remember_chart(
-            BOT_ID, question_id, source, receiver, caption, "HTML", key, reply_markup=reply_markup,
+            BOT_ID, question_id, source, receiver, caption, "HTML", key,
+            reply_markup=reply_markup, selected_choice=selected_choice,
         )
         return compiled(self.session.execute.call_args.args[0])
 
@@ -71,20 +72,23 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_reused_target_upserts_new_question_caption_and_statistics(self):
         source = message(message_id=0, ephemeral_id=72)
-        old = await self.remember(source, question_id=1, caption="Вы салат", key="old")
-        replacement = await self.remember(source, question_id=2, caption="Вы рыцарь &amp; маг", key="new")
+        old = await self.remember(source, question_id=1, caption="Вы салат", key="old",
+                                  selected_choice="салат")
+        replacement = await self.remember(source, question_id=2, caption="Вы рыцарь &amp; маг", key="new",
+                                          selected_choice="рыцарь & маг")
 
         for name in ("bot_id", "chat_id", "receiver_user_id", "message_id", "ephemeral_message_id"):
             self.assertEqual(old.params[name], replacement.params[name])
         self.assertEqual(replacement.params["question_id"], 2)
         self.assertEqual(replacement.params["caption"], "Вы рыцарь &amp; маг")
         self.assertEqual(replacement.params["statistics_key"], "new")
+        self.assertEqual(replacement.params["selected_choice"], "рыцарь & маг")
         sql = str(replacement)
         self.assertIn(
             "ON CONFLICT (bot_id, chat_id, receiver_user_id, message_id, ephemeral_message_id) DO UPDATE",
             sql,
         )
-        for name in ("question_id", "caption", "parse_mode", "reply_markup", "statistics_key"):
+        for name in ("question_id", "caption", "parse_mode", "reply_markup", "statistics_key", "selected_choice"):
             self.assertIn(f"{name} = excluded.{name}", sql)
 
     async def test_personal_keyboards_round_trip_through_database_and_reused_target_clears_old_keyboard(self):
@@ -100,9 +104,9 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         with Session(engine) as database:
             self.session.execute.side_effect = database.execute
             self.session.commit.side_effect = database.commit
-            for receiver, keyboard in ((111, first), (222, second)):
+            for receiver, keyboard, choice in ((111, first, "фотограф"), (222, second, "император")):
                 await self.remember(message(message_id=0, ephemeral_id=72),
-                                    receiver=receiver, reply_markup=keyboard)
+                                    receiver=receiver, reply_markup=keyboard, selected_choice=choice)
 
         # Use a new SQLAlchemy session, like a new bot process loading stored targets.
         with Session(engine) as database:
@@ -110,6 +114,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             self.session.commit.side_effect = database.commit
             stored = await chart_messages.list_charts(BOT_ID, 1)
             self.assertEqual([chart.receiver_user_id for chart in stored], [111, 222])
+            self.assertEqual([chart.selected_choice for chart in stored], ["фотограф", "император"])
             self.assertEqual([
                 types.InlineKeyboardMarkup.model_validate_json(chart.reply_markup) for chart in stored
             ], [first, second])
@@ -118,6 +123,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             database.expire_all()
             replacement = (await chart_messages.list_charts(BOT_ID, 2))[0]
             self.assertIsNone(replacement.reply_markup)
+            self.assertIsNone(replacement.selected_choice)
             self.assertEqual(len(await chart_messages.list_charts(BOT_ID, 1)), 1)
 
     async def test_next_ephemeral_invalidates_only_that_receivers_exact_target(self):
@@ -157,6 +163,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             id=9, bot_id=BOT_ID, question_id=1, chat_id=CHAT_ID,
             receiver_user_id=111, message_id=0, ephemeral_message_id=72,
             caption="Вы салат", parse_mode="HTML", statistics_key="old", reply_markup="{}",
+            selected_choice="салат",
         )
         await chart_messages.mark_chart_updated(old, "new")
         update = compiled(self.session.execute.call_args.args[0])
@@ -171,6 +178,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(statement.params["caption_1"], "Вы салат")
                 self.assertEqual(statement.params["parse_mode_1"], "HTML")
                 self.assertEqual(statement.params["reply_markup_1"], "{}")
+                self.assertEqual(statement.params["selected_choice_1"], "салат")
                 self.assertIn("chart_messages.question_id =", str(statement))
                 self.assertIn("chart_messages.statistics_key =", str(statement))
         self.assertEqual(update.params["statistics_key"], "new")

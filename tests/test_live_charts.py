@@ -82,7 +82,8 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
         await chart_updates.stop_chart_updates()
         await self.bot.session.close()
 
-    def add_chart(self, receiver, caption=None, *, regular=False, key="old", reply_markup=None):
+    def add_chart(self, receiver, caption=None, *, regular=False, key="old", reply_markup=None,
+                  selected_choice=None):
         chart = SimpleNamespace(
             id=len(self.targets) + 1,
             bot_id=self.bot.id,
@@ -95,6 +96,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
             parse_mode="HTML" if caption is not None else None,
             reply_markup=reply_markup.model_dump_json(exclude_none=True) if reply_markup else None,
             statistics_key=key,
+            selected_choice=selected_choice,
         )
         self.targets.append(chart)
         return chart
@@ -113,7 +115,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
         await self.refresh()
 
         self.list_charts.assert_awaited_once_with(self.bot.id, 1)
-        self.renderer.assert_called_once_with(self.statistics)
+        self.renderer.assert_called_once_with(self.statistics, selected_choice=None)
         self.assertEqual(len(self.transport.requests), 4)
         for method, target in zip(self.transport.requests, (first, second, regular, separate_photo)):
             self.assertEqual(method.chat_id, target.chat_id)
@@ -163,6 +165,68 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
             "editEphemeralMessageMedia", "editMessageMedia",
         ])
 
+    async def test_each_player_keeps_their_highlight_and_matching_choices_share_a_render(self):
+        self.add_chart(111, "Вы фотограф", selected_choice="фотограф")
+        self.add_chart(222, "Вы преступник", selected_choice="преступник")
+        self.add_chart(333, "Вы фотограф", regular=True, selected_choice="фотограф")
+        self.add_chart(444, "Старая карточка")
+        self.renderer.side_effect = lambda stats, *, selected_choice: (
+            f"chart:{selected_choice}".encode()
+        )
+
+        await self.refresh()
+
+        self.assertEqual(self.renderer.call_args_list, [
+            unittest.mock.call(self.statistics, selected_choice="фотограф"),
+            unittest.mock.call(self.statistics, selected_choice="преступник"),
+            unittest.mock.call(self.statistics, selected_choice=None),
+        ])
+        self.assertEqual([method.media.media.data for method in self.transport.requests], [
+            "chart:фотограф".encode(), "chart:преступник".encode(),
+            "chart:фотограф".encode(), b"chart:None",
+        ])
+        self.assertEqual([method.media.caption for method in self.transport.requests], [
+            "Вы фотограф", "Вы преступник", "Вы фотограф", "Старая карточка",
+        ])
+
+    async def test_supplied_personal_image_is_never_sent_to_a_different_choice(self):
+        self.add_chart(111, selected_choice="фотограф")
+        self.add_chart(222, selected_choice="преступник")
+        self.add_chart(333, selected_choice="фотограф")
+
+        await self.refresh(statistics=self.statistics.copy(), chart=b"photographer image",
+                           selected_choice="фотограф")
+
+        self.renderer.assert_called_once_with(self.statistics, selected_choice="преступник")
+        self.assertEqual([method.media.media.data for method in self.transport.requests], [
+            b"photographer image", PNG, b"photographer image",
+        ])
+
+    async def test_replaced_registration_uses_its_current_saved_choice(self):
+        snapshot = self.add_chart(111, "Вы фотограф", selected_choice="фотограф")
+        replacement = SimpleNamespace(**{
+            **snapshot.__dict__, "caption": "Вы преступник", "selected_choice": "преступник",
+        })
+        self.get_chart.side_effect = None
+        self.get_chart.return_value = replacement
+
+        await self.refresh()
+
+        self.renderer.assert_called_once_with(self.statistics, selected_choice="преступник")
+        self.assertEqual(self.transport.requests[0].media.caption, "Вы преступник")
+        self.mark_updated.assert_awaited_once_with(
+            replacement, chart_updates.statistics_key(self.statistics),
+        )
+
+    async def test_reset_statistics_keeps_card_highlight_with_its_personal_caption(self):
+        self.add_chart(111, "Вы фотограф", selected_choice="фотограф")
+        self.statistics = {"фотограф": 0.0, "преступник": 0.0}
+
+        await self.refresh()
+
+        self.renderer.assert_called_once_with(self.statistics, selected_choice="фотограф")
+        self.assertEqual(self.transport.requests[0].media.caption, "Вы фотограф")
+
     async def test_unchanged_charts_are_not_uploaded_again(self):
         current_key = chart_updates.statistics_key(self.statistics)
         self.add_chart(111, key=current_key)
@@ -185,7 +249,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
         await self.refresh(statistics=old_statistics, chart=b"stale chart")
 
         self.get_statistics.assert_awaited_once_with(1, self.session)
-        self.renderer.assert_called_once_with(self.statistics)
+        self.renderer.assert_called_once_with(self.statistics, selected_choice=None)
         self.assertEqual(self.transport.requests[0].media.media.data, PNG)
 
     async def test_reused_ephemeral_id_does_not_overwrite_another_question(self):
@@ -205,7 +269,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
     async def test_concurrent_refreshes_read_statistics_in_order_and_leave_latest_chart(self):
         target = self.add_chart(111)
         self.statistics = {"фотограф": 100.0, "преступник": 0.0}
-        self.renderer.side_effect = lambda stats: f"chart:{stats['фотограф']}".encode()
+        self.renderer.side_effect = lambda stats, **kwargs: f"chart:{stats['фотограф']}".encode()
         first_edit = asyncio.Event()
         release_edit = asyncio.Event()
 
@@ -284,7 +348,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
             waiting.set()
             await release_retry.wait()
 
-        self.renderer.side_effect = lambda stats: f"chart:{stats['фотограф']}".encode()
+        self.renderer.side_effect = lambda stats, **kwargs: f"chart:{stats['фотограф']}".encode()
         with patch.object(chart_updates, "sleep", side_effect=delayed_sleep) as retry_sleep:
             with self.assertLogs(level="WARNING"):
                 await self.refresh()

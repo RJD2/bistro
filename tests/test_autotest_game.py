@@ -135,8 +135,11 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assert_share_button(result.reply_markup, "преступник")
         self.remember.assert_awaited_once()
         self.assertEqual(self.remember.await_args.kwargs["reply_markup"], result.reply_markup)
+        self.assertEqual(self.remember.await_args.kwargs["selected_choice"], "преступник")
+        game.render_statistics_chart.assert_called_once_with(self.statistics, selected_choice="преступник")
         self.refresh.assert_awaited_once_with(
             self.bot, 17, game.get_question_statistics, statistics=self.statistics, chart=PNG,
+            selected_choice="преступник",
         )
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
@@ -190,6 +193,8 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("вы преступник", result.media.caption)
         self.assertNotIn("вы фотограф", result.media.caption)
         self.assert_share_button(result.reply_markup, "преступник")
+        game.render_statistics_chart.assert_called_with(self.statistics, selected_choice="преступник")
+        self.assertEqual(self.remember.await_args.kwargs["selected_choice"], "преступник")
 
     async def test_association_position_maps_to_result_and_statistics_identity(self):
         self.question = Question(
@@ -208,6 +213,8 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("салат", result.media.caption)
                 self.assertNotIn("Рим", result.media.caption)
                 self.assert_share_button(result.reply_markup, expected)
+                game.render_statistics_chart.assert_called_with(self.statistics, selected_choice=expected)
+                self.assertEqual(self.remember.await_args.kwargs["selected_choice"], expected)
 
     async def test_question_with_incomplete_associations_cannot_record_a_vote(self):
         for associo in (None, "", "  ", "снимок", "снимок,тюрьма,комната", "снимок,", "снимок,СНИМОК"):

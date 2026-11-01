@@ -411,6 +411,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                 question_id=kwargs["question_id"], caption=kwargs["caption"],
                 parse_mode=kwargs["parse_mode"], statistics_key=kwargs["statistics_key"],
                 reply_markup=kwargs["reply_markup"].model_dump_json(exclude_none=True),
+                selected_choice=kwargs["selected_choice"],
             )
 
         async def forget(bot_id, message, receiver):
@@ -419,7 +420,8 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         async def mark_updated(target, key):
             target.statistics_key = key
 
-        render = lambda stats: f"chart:{stats['фотограф SQL & художник']}".encode()
+        def render(stats, selected_choice=None):
+            return f"chart:{stats['фотограф SQL & художник']}:{selected_choice}".encode()
         self.remember_chart.side_effect = remember
         self.forget_message.side_effect = forget
         self.refresh_charts.side_effect = chart_updates.refresh_question_charts
@@ -459,8 +461,8 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         new_result = self.requests("sendPhoto")[-1][0]
         self.assertIn("вы преступник", new_result.caption)
         self.assert_share_button(new_result.reply_markup, "преступник")
-        self.assertEqual(old_result_edit.media.media.data, new_result.photo.data)
-        self.assertEqual(new_result.photo.data, b"chart:50.0")
+        self.assertEqual(old_result_edit.media.media.data, "chart:50.0:фотограф SQL & художник".encode())
+        self.assertEqual(new_result.photo.data, "chart:50.0:преступник".encode())
         self.assertEqual(self.requests("sendMessage"), [])
         self.assertEqual(self.transport.requests[-1][0].__api_method__, "editEphemeralMessageMedia")
         self.assertEqual(len(targets), 2)
