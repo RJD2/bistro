@@ -30,12 +30,12 @@ async def share_result(inline: types.InlineQuery):
             bot_link = f"https://t.me/{identity.username}?start=question_{question.id}"
             text = (
                 f"Оказывается я {escape(choice)}, узнай кто ты в "
-                f'<a href="{escape(bot_link, quote=True)}">Быстроботе</a>'
+                f'<a href="{escape(bot_link, quote=True)}">Быстротесте</a>'
             )
             results.append(types.InlineQueryResultArticle(
                 id=f"share:{inline.from_user.id}:{question.id}",
                 title="Поделиться результатом",
-                description=f"Оказывается я {choice}, узнай кто ты в Быстроботе",
+                description=f"Оказывается я {choice}, узнай кто ты в Быстротесте",
                 input_message_content=types.InputTextMessageContent(
                     message_text=text,
                     parse_mode="HTML",

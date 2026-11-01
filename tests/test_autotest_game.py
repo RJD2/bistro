@@ -72,7 +72,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         link = urlsplit(button.url)
         self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
         expected = (
-            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"Оказывается я {choice}, узнай кто ты в Быстротесте\n"
             f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
         )
         self.assertEqual(parse_qs(link.query), {"url": [expected]})

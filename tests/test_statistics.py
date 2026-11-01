@@ -167,7 +167,7 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(button.text, "📤 Поделиться")
                 self.assertIsNone(button.switch_inline_query_chosen_chat)
                 self.assertEqual(parse_qs(urlsplit(button.url).query), {"url": [
-                    f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+                    f"Оказывается я {choice}, узнай кто ты в Быстротесте\n"
                     "https://t.me/test_bistro_bot?start=question_1",
                 ]})
                 message.answer.assert_awaited_once_with(game.MESSAGES["game_over"])

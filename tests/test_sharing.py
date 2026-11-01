@@ -141,10 +141,10 @@ class SharingTests(unittest.IsolatedAsyncioTestCase):
         ))
         rendered = SharedText(content.message_text)
         self.assertEqual("".join(rendered.visible), (
-            f"Оказывается я {choice}, узнай кто ты в Быстроботе"
+            f"Оказывается я {choice}, узнай кто ты в Быстротесте"
         ))
         self.assertEqual(rendered.links, [[
-            f"https://t.me/{BOT_USERNAME}?start=question_{question_id}", "Быстроботе",
+            f"https://t.me/{BOT_USERNAME}?start=question_{question_id}", "Быстротесте",
         ]])
 
     async def test_share_button_prepares_plain_message_with_visible_original_question_link(self):
@@ -160,7 +160,7 @@ class SharingTests(unittest.IsolatedAsyncioTestCase):
                 link = urlsplit(button.url)
                 self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
                 expected = (
-                    f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+                    f"Оказывается я {choice}, узнай кто ты в Быстротесте\n"
                     f"https://t.me/{BOT_USERNAME}?start=question_{question_id}"
                 )
                 self.assertEqual(parse_qs(link.query), {"url": [expected]})

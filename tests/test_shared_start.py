@@ -152,7 +152,7 @@ class SharedStartTests(unittest.IsolatedAsyncioTestCase):
         keyboard = await get_result_keyboard(self.bot, "алкоголик", self.shared.id)
         draft = parse_qs(urlsplit(keyboard.inline_keyboard[0][0].url).query)["url"][0]
         self.assertEqual(draft, (
-            "Оказывается я алкоголик, узнай кто ты в Быстроботе\n"
+            "Оказывается я алкоголик, узнай кто ты в Быстротесте\n"
             f"https://t.me/{BOT_USERNAME}?start=question_42"
         ))
         payload = parse_qs(urlsplit(draft.splitlines()[-1]).query)["start"][0]

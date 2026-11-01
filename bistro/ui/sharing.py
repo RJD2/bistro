@@ -10,7 +10,7 @@ async def get_result_keyboard(
 ) -> types.InlineKeyboardMarkup:
     identity = await bot.me()
     draft = (
-        f"Оказывается я {selected_choice}, узнай кто ты в Быстроботе\n"
+        f"Оказывается я {selected_choice}, узнай кто ты в Быстротесте\n"
         f"https://t.me/{identity.username}?start=question_{question_id}"
     )
     # Clients insert `url` as the start of the draft. Keep the invitation in
