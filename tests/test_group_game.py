@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bistro.charts import updates as chart_updates
 from bistro.handlers import game
 from bistro.database.models import Answer, Question, User
-from bistro.handlers.states import GameStates
+from bistro.handlers.states import (
+    AssocioCreationStates, BulkQuestionCreationStates, GameStates, QuestionCreationStates,
+)
 
 
 CHAT_ID = -100123456789
@@ -213,51 +215,123 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                 ))
                 self.assertIn("questions.associo", query.partition("WHERE")[2])
 
-    async def test_private_answers_still_require_game_state_and_use_regular_messages(self):
-        for next_question in (None, Question(id=2, word="замок SQL", options="слесарь,рыцарь", associo="ключ,башня")):
-            with self.subTest(next_question=next_question):
-                self.transport.requests.clear()
-                self.user_lookup.reset_mock()
-                self.session_factory.reset_mock()
-                state = self.dp.fsm.get_context(
-                    bot=self.bot, chat_id=CHAT_ID, user_id=222,
-                )
-                await state.clear()
-                callback = self.callback(chat_type=ChatType.PRIVATE)
+    async def test_private_answers_work_with_or_without_game_state_and_use_regular_messages(self):
+        for initial_state in (None, GameStates.waiting_for_answer):
+            for next_question in (None, Question(id=2, word="замок SQL", options="слесарь,рыцарь", associo="ключ,башня")):
+                with self.subTest(initial_state=initial_state, next_question=next_question):
+                    self.transport.requests.clear()
+                    state = self.dp.fsm.get_context(
+                        bot=self.bot, chat_id=CHAT_ID, user_id=222,
+                    )
+                    await state.clear()
+                    await state.set_state(initial_state)
+                    self.configure_database(next_question=next_question)
 
-                await self.feed_callback(callback)
+                    await self.feed_callback(self.callback(chat_type=ChatType.PRIVATE))
 
-                self.assertEqual(self.transport.requests, [])
-                self.session_factory.assert_not_called()
-                self.user_lookup.assert_not_awaited()
+                    edits = self.requests("editMessageMedia")
+                    self.assertEqual(len(edits), 1)
+                    self.assertIn("вы фотограф SQL &amp; художник", edits[0][0].media.caption)
+                    self.assert_share_button(edits[0][0].reply_markup, "фотограф SQL & художник")
+                    self.assertEqual(self.remember_chart.await_args.kwargs["reply_markup"],
+                                     edits[0][0].reply_markup)
+                    messages = self.requests("sendMessage")
+                    self.assertEqual(len(messages), 1)
+                    if next_question is None:
+                        self.assertEqual(messages[0][0].text, game.MESSAGES["game_over"])
+                        self.assertIsNone(await state.get_state())
+                        self.assertEqual(await state.get_data(), {})
+                    else:
+                        self.assertIn("Замок SQL", messages[0][0].text)
+                        self.assertEqual(messages[0][0].reply_markup.inline_keyboard[0][0].callback_data,
+                                         "answer:2:0")
+                        self.assertEqual(await state.get_state(), GameStates.waiting_for_answer.state)
+                        self.assertEqual((await state.get_data())["qid"], 2)
+                    self.assertTrue(all(
+                        "ephemeral_message_parameters" not in payload
+                        and "Ephemeral" not in method.__api_method__
+                        for method, payload, _ in self.transport.requests
+                    ))
 
-                await state.set_state(GameStates.waiting_for_answer)
-                self.configure_database(next_question=next_question)
-                await self.feed_callback(callback, update_id=2)
+    async def test_unanswered_private_question_survives_restart_and_continues_game(self):
+        answered = MagicMock()
+        answered.all.return_value = []
+        self.session.execute.side_effect = [answered, scalar_result(self.question)]
+        message = types.Message.model_validate({
+            "message_id": 16,
+            "date": 1700000000,
+            "chat": {"id": CHAT_ID, "type": ChatType.PRIVATE},
+            "from": {"id": 222, "is_bot": False, "first_name": "Игрок"},
+            "text": "/play",
+            "entities": [{"type": "bot_command", "offset": 0, "length": 5}],
+        }, context={"bot": self.bot})
+        await self.dp.feed_update(self.bot, types.Update(update_id=1, message=message))
+        sent_question = self.requests("sendMessage")[0][0]
+        pending_answer = self.callback(
+            chat_type=ChatType.PRIVATE,
+            data=sent_question.reply_markup.inline_keyboard[1][0].callback_data,
+        )
+        old_state = self.dp.fsm.get_context(bot=self.bot, chat_id=CHAT_ID, user_id=222)
+        self.assertEqual(await old_state.get_state(), GameStates.waiting_for_answer.state)
 
-                edits = self.requests("editMessageMedia")
-                self.assertEqual(len(edits), 1)
-                self.assertIn("вы фотограф SQL &amp; художник", edits[0][0].media.caption)
-                self.assert_share_button(edits[0][0].reply_markup, "фотограф SQL & художник")
-                self.assertEqual(self.remember_chart.await_args.kwargs["reply_markup"],
-                                 edits[0][0].reply_markup)
-                messages = self.requests("sendMessage")
-                self.assertEqual(len(messages), 1)
-                if next_question is None:
-                    self.assertEqual(messages[0][0].text, game.MESSAGES["game_over"])
-                    self.assertIsNone(await state.get_state())
-                    self.assertEqual(await state.get_data(), {})
-                else:
-                    self.assertIn("Замок SQL", messages[0][0].text)
-                    self.assertEqual(messages[0][0].reply_markup.inline_keyboard[0][0].callback_data,
-                                     "answer:2:0")
-                    self.assertEqual(await state.get_state(), GameStates.waiting_for_answer.state)
-                    self.assertEqual((await state.get_data())["qid"], 2)
-                self.assertTrue(all(
-                    "ephemeral_message_parameters" not in payload
-                    and "Ephemeral" not in method.__api_method__
-                    for method, payload, _ in self.transport.requests
-                ))
+        # Telegram retains the old question, while a restarted bot has fresh memory.
+        await self.dp.storage.close()
+        self.dp = Dispatcher(storage=MemoryStorage())
+        game.register_handlers_game(self.dp)
+        state = self.dp.fsm.get_context(bot=self.bot, chat_id=CHAT_ID, user_id=222)
+        self.assertIsNone(await state.get_state())
+        self.assertEqual(await state.get_data(), {})
+        self.transport.requests.clear()
+        next_question = Question(
+            id=2, word="замок SQL", options="слесарь,рыцарь", associo="ключ,башня",
+        )
+        self.configure_database(next_question=next_question)
+
+        await self.feed_callback(pending_answer, update_id=2)
+
+        self.assertIn("вы преступник", self.requests("editMessageMedia")[0][0].media.caption)
+        self.assertEqual(len(self.requests("sendMessage")), 1)
+        next_button = self.requests("sendMessage")[0][0].reply_markup.inline_keyboard[0][0]
+        self.assertEqual(next_button.callback_data, "answer:2:0")
+        self.assertEqual(await state.get_state(), GameStates.waiting_for_answer.state)
+        self.assertEqual((await state.get_data())["qid"], 2)
+        self.assertEqual(self.session.commit.await_count, 1)
+
+        self.question = next_question
+        self.configure_database()
+        await self.feed_callback(self.callback(
+            chat_type=ChatType.PRIVATE, data=next_button.callback_data,
+        ), update_id=3)
+
+        self.assertEqual(len(self.requests("editMessageMedia")), 2)
+        self.assertIn("вы слесарь", self.requests("editMessageMedia")[-1][0].media.caption)
+        self.assertEqual(self.requests("sendMessage")[-1][0].text, game.MESSAGES["game_over"])
+        saved = [call.args[0] for call in self.session.add.call_args_list]
+        self.assertEqual([(answer.question_id, answer.choice) for answer in saved], [
+            (1, "преступник"), (2, "слесарь"),
+        ])
+        self.assertEqual(self.session.commit.await_count, 2)
+        self.assertIsNone(await state.get_state())
+        self.assertEqual(await state.get_data(), {})
+
+    async def test_old_private_answer_does_not_interrupt_question_creation_drafts(self):
+        draft = {"word": "черновик", "options": ["повар", "император"]}
+        for states in (QuestionCreationStates, BulkQuestionCreationStates, AssocioCreationStates):
+            for draft_state in states.__all_states__:
+                with self.subTest(draft_state=draft_state):
+                    state = self.dp.fsm.get_context(
+                        bot=self.bot, chat_id=CHAT_ID, user_id=222,
+                    )
+                    await state.set_state(draft_state)
+                    await state.set_data(draft)
+
+                    await self.feed_callback(self.callback(chat_type=ChatType.PRIVATE))
+
+                    self.assertEqual(await state.get_state(), draft_state.state)
+                    self.assertEqual(await state.get_data(), draft)
+                    self.assertEqual(self.transport.requests, [])
+                    self.session_factory.assert_not_called()
+                    self.user_lookup.assert_not_awaited()
 
     async def test_every_group_member_can_answer_without_starting_the_game(self):
         for chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):

@@ -337,13 +337,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
 
         if next_question:
             choices = question_choices(next_question)
-            next_qid = next_question.id
-            await state.update_data(qid=next_qid)
-            await message.answer(
-                question_text(next_question),
-                parse_mode="HTML",
-                reply_markup=get_keyboard(choices, next_qid),
-            )
+            await _send_question(message, state, next_question, choices)
         else:
             await message.answer(MESSAGES["game_over"])
             await state.clear()
@@ -375,5 +369,7 @@ def register_handlers_game(dp: Dispatcher):
         process_answer,
         F.data.startswith("answer:"),
         F.message.chat.type == ChatType.PRIVATE,
-        StateFilter(GameStates.waiting_for_answer),
+        # The callback contains the question ID, so unanswered buttons remain
+        # usable after a restart clears MemoryStorage. Keep admin drafts intact.
+        StateFilter(None, GameStates.waiting_for_answer),
     )
