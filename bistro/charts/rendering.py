@@ -11,6 +11,8 @@ from matplotlib.font_manager import FontProperties
 from matplotlib.patches import Patch, Wedge
 from PIL import Image, ImageFilter
 
+from bistro.ui.text_formatting import capitalize_first
+
 
 COLORS = (
     "#2563eb", "#f59e0b", "#16a34a", "#9333ea",
@@ -76,7 +78,7 @@ def _render_statistics_chart(
     legend_font = FontProperties(fname=str(FONT_PATH), size=13, weight="medium")
     percentage_font = FontProperties(family="DejaVu Sans", size=12)
     entries = list(statistics.items())
-    labels = [fill(choice, width=42, break_on_hyphens=False) for choice, _ in entries]
+    labels = [fill(capitalize_first(choice), width=42, break_on_hyphens=False) for choice, _ in entries]
     legend_lines = sum(label.count("\n") + 1 for label in labels)
     legend_height = legend_lines * 0.28 + len(entries) * 0.14
     height = 5.1 + legend_height

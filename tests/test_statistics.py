@@ -56,7 +56,7 @@ class QuestionStatisticsTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StatisticsChartTests(unittest.TestCase):
-    def test_legend_preserves_exact_choice_case_and_statistics(self):
+    def test_legend_capitalizes_first_letter_without_changing_statistics(self):
         statistics = {"плотник": 0.0, "ВОЕНАЧАЛЬНИК NASA": 100.0, "пРоводник SQL": 0.0}
         original = statistics.copy()
         with patch("bistro.charts.rendering.Patch", wraps=Patch) as legend_patch:
@@ -64,7 +64,7 @@ class StatisticsChartTests(unittest.TestCase):
 
         self.assertEqual(
             [call.kwargs["label"] for call in legend_patch.call_args_list],
-            ["плотник", "ВОЕНАЧАЛЬНИК NASA", "пРоводник SQL"],
+            ["Плотник", "ВОЕНАЧАЛЬНИК NASA", "ПРоводник SQL"],
         )
         self.assertEqual(statistics, original)
 
