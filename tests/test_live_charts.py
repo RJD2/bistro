@@ -17,6 +17,7 @@ from aiogram.exceptions import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bistro.charts import updates as chart_updates
+from bistro.ui.sharing import get_result_keyboard
 
 
 PNG = b"\x89PNG\r\n\x1a\nnew statistics"
@@ -135,7 +136,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
     async def test_reloaded_regular_and_personal_charts_keep_each_players_share_button(self):
         keyboards = []
         for receiver, choice, regular in ((111, "фотограф", False), (222, "император", True)):
-            keyboard = types.InlineKeyboardMarkup(inline_keyboard=[[
+            keyboard = get_result_keyboard(1) if not regular else types.InlineKeyboardMarkup(inline_keyboard=[[
                 types.InlineKeyboardButton(text="Поделиться", url=f"https://t.me/share/url?text={choice}"),
             ]])
             keyboards.append(keyboard)

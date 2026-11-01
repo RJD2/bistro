@@ -9,6 +9,7 @@ from bistro.handlers.autotest import register_handlers_autotest
 from bistro.handlers.start import register_handlers_start
 from bistro.handlers.game import register_handlers_game
 from bistro.handlers.statistics import register_handlers_statistics
+from bistro.handlers.sharing import register_handlers_sharing
 
 bot = Bot(token=config.TOKEN)
 dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
@@ -22,6 +23,7 @@ register_handlers_statistics(dp)
 register_handlers_start(dp)
 register_handlers_admin(dp)
 register_handlers_game(dp)
+register_handlers_sharing(dp)
 
 async def main():
     await dp.start_polling(bot, skip_updates=True)

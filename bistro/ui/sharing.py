@@ -1,22 +1,17 @@
-"""Open Telegram's recipient chooser with a personal result and bot invitation."""
+"""Open Telegram's recipient chooser for a formatted inline result."""
 
-from urllib.parse import quote, urlencode
-
-from aiogram import Bot, types
+from aiogram import types
 
 
-async def get_result_keyboard(
-    bot: Bot, selected_choice: str, question_id: int,
-) -> types.InlineKeyboardMarkup:
-    identity = await bot.me()
-    text = (
-        f"Оказывается я {selected_choice}, узнай кто ты в Быстроботе\n"
-        f"https://t.me/{identity.username}?start=question_{question_id}"
-    )
-    # Telegram puts `url` before `text` in the shared draft. Keep the complete
-    # invitation together so the bot link stays after the personal result.
-    # Encode spaces as %20: iOS does not convert '+' to spaces in this field.
-    share_url = "https://t.me/share/url?" + urlencode({"url": text}, quote_via=quote)
+def get_result_keyboard(question_id: int) -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(inline_keyboard=[[
-        types.InlineKeyboardButton(text="📤 Поделиться", url=share_url),
+        types.InlineKeyboardButton(
+            text="📤 Поделиться",
+            switch_inline_query_chosen_chat=types.SwitchInlineQueryChosenChat(
+                query=f"share:{question_id}",
+                allow_user_chats=True,
+                allow_group_chats=True,
+                allow_channel_chats=True,
+            ),
+        ),
     ]])

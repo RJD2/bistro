@@ -287,7 +287,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         chart = await to_thread(render_statistics_chart, stats)
         photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
         chart_key = statistics_key(stats)
-        result_keyboard = await get_result_keyboard(callback.bot, selected_choice, qid)
+        result_keyboard = get_result_keyboard(qid)
 
         if is_group:
             await _show_group_result(
