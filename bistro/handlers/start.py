@@ -1,5 +1,9 @@
+import re
+
 from aiogram import types, Dispatcher
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
+from aiogram.fsm.context import FSMContext
+from bistro.handlers.game import start_shared_game
 from bistro.ui.messages import MESSAGES
 from bistro import config
 from bistro.ui.menus import get_main_menu_for_chat
@@ -14,7 +18,22 @@ def is_owner_chat(message: types.Message) -> bool:
     )
 
 
-async def cmd_start(message: types.Message):
+def _shared_question_id(payload: str | None) -> int | None:
+    match = re.fullmatch(r"question_([0-9]{1,10})", payload or "")
+    if match is not None:
+        question_id = int(match[1])
+        if 0 < question_id <= 2**31 - 1:
+            return question_id
+    return None
+
+
+async def cmd_start(
+    message: types.Message, state: FSMContext | None = None, command: CommandObject | None = None,
+):
+    question_id = _shared_question_id(command.args if command is not None else None)
+    if message.chat.type == "private" and question_id is not None and state is not None:
+        await start_shared_game(message, state, question_id)
+        return
     await message.answer(
         MESSAGES["start"],
         reply_markup=await get_main_menu_for_chat(message.chat.id, is_admin=is_owner_chat(message)),

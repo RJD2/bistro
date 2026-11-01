@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
 from aiogram import types
+from sqlalchemy import create_engine
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from bistro.charts import messages as chart_messages
 from bistro.database.models import ChartMessage
@@ -41,9 +43,10 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         active_patch.start()
         self.addCleanup(active_patch.stop)
 
-    async def remember(self, source, *, question_id=1, receiver=111, caption="Вы салат", key="first"):
+    async def remember(self, source, *, question_id=1, receiver=111, caption="Вы салат", key="first",
+                       reply_markup=None):
         await chart_messages.remember_chart(
-            BOT_ID, question_id, source, receiver, caption, "HTML", key,
+            BOT_ID, question_id, source, receiver, caption, "HTML", key, reply_markup=reply_markup,
         )
         return compiled(self.session.execute.call_args.args[0])
 
@@ -81,8 +84,41 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             "ON CONFLICT (bot_id, chat_id, receiver_user_id, message_id, ephemeral_message_id) DO UPDATE",
             sql,
         )
-        for name in ("question_id", "caption", "parse_mode", "statistics_key"):
+        for name in ("question_id", "caption", "parse_mode", "reply_markup", "statistics_key"):
             self.assertIn(f"{name} = excluded.{name}", sql)
+
+    async def test_personal_keyboards_round_trip_through_database_and_reused_target_clears_old_keyboard(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        ChartMessage.__table__.create(engine)
+        first = types.InlineKeyboardMarkup(inline_keyboard=[[
+            types.InlineKeyboardButton(text="Поделиться", url="https://t.me/share/url?text=фотограф"),
+        ]])
+        second = types.InlineKeyboardMarkup(inline_keyboard=[[
+            types.InlineKeyboardButton(text="Поделиться", url="https://t.me/share/url?text=император"),
+        ]])
+        with Session(engine) as database:
+            self.session.execute.side_effect = database.execute
+            self.session.commit.side_effect = database.commit
+            for receiver, keyboard in ((111, first), (222, second)):
+                await self.remember(message(message_id=0, ephemeral_id=72),
+                                    receiver=receiver, reply_markup=keyboard)
+
+        # Use a new SQLAlchemy session, like a new bot process loading stored targets.
+        with Session(engine) as database:
+            self.session.execute.side_effect = database.execute
+            self.session.commit.side_effect = database.commit
+            stored = await chart_messages.list_charts(BOT_ID, 1)
+            self.assertEqual([chart.receiver_user_id for chart in stored], [111, 222])
+            self.assertEqual([
+                types.InlineKeyboardMarkup.model_validate_json(chart.reply_markup) for chart in stored
+            ], [first, second])
+            await self.remember(message(message_id=0, ephemeral_id=72), receiver=111,
+                                question_id=2, reply_markup=None)
+            database.expire_all()
+            replacement = (await chart_messages.list_charts(BOT_ID, 2))[0]
+            self.assertIsNone(replacement.reply_markup)
+            self.assertEqual(len(await chart_messages.list_charts(BOT_ID, 1)), 1)
 
     async def test_next_ephemeral_invalidates_only_that_receivers_exact_target(self):
         await chart_messages.forget_message(BOT_ID, message(message_id=0, ephemeral_id=72), 111)
@@ -120,7 +156,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         old = ChartMessage(
             id=9, bot_id=BOT_ID, question_id=1, chat_id=CHAT_ID,
             receiver_user_id=111, message_id=0, ephemeral_message_id=72,
-            caption="Вы салат", parse_mode="HTML", statistics_key="old",
+            caption="Вы салат", parse_mode="HTML", statistics_key="old", reply_markup="{}",
         )
         await chart_messages.mark_chart_updated(old, "new")
         update = compiled(self.session.execute.call_args.args[0])
@@ -134,6 +170,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(statement.params["statistics_key_1"], "old")
                 self.assertEqual(statement.params["caption_1"], "Вы салат")
                 self.assertEqual(statement.params["parse_mode_1"], "HTML")
+                self.assertEqual(statement.params["reply_markup_1"], "{}")
                 self.assertIn("chart_messages.question_id =", str(statement))
                 self.assertIn("chart_messages.statistics_key =", str(statement))
         self.assertEqual(update.params["statistics_key"], "new")

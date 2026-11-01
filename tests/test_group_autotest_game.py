@@ -3,6 +3,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -64,6 +65,9 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.transport = RecordingSession()
         self.bot = Bot(token="123456:TEST_TOKEN", session=self.transport)
+        self.bot.me = AsyncMock(return_value=types.User(
+            id=self.bot.id, is_bot=True, first_name="Быстротест", username="test_bistro_bot",
+        ))
         self.dp = Dispatcher(storage=MemoryStorage())
         game.register_handlers_game(self.dp)
         self.session = AsyncMock(spec=AsyncSession)
@@ -89,6 +93,24 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
         for active_patch in self.patches:
             active_patch.start()
             self.addCleanup(active_patch.stop)
+
+    def assert_share_button(self, markup, choice):
+        self.assertIsNotNone(markup)
+        buttons = [button for row in markup.inline_keyboard for button in row]
+        self.assertEqual(len(buttons), 1)
+        button = buttons[0]
+        self.assertEqual(button.text, "📤 Поделиться")
+        self.assertIsNone(button.callback_data)
+        link = urlsplit(button.url)
+        self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+        expected = (
+            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
+        )
+        self.assertEqual(parse_qs(link.query), {"url": [expected]})
+        # iOS decodes percent escapes without converting plus signs to spaces.
+        self.assertNotIn("+", link.query)
+        self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
 
     async def asyncTearDown(self):
         await self.dp.storage.close()
@@ -130,7 +152,7 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(method.__api_method__, {"answerCallbackQuery", "sendPhoto"})
             if method.__api_method__ == "sendPhoto":
                 self.assertEqual(method.chat_id, CHAT_ID)
-                self.assertIsNone(method.reply_markup)
+                self.assertIsNotNone(method.reply_markup)
 
     async def test_two_members_answer_same_daily_question_and_only_see_their_own_result(self):
         for chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):
@@ -167,6 +189,7 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(method.parse_mode, "HTML")
                     self.assertIn("Камера SQL &amp; &lt;тест&gt;", method.caption)
                     self.assertIn(f"вы {choice}", method.caption)
+                    self.assert_share_button(method.reply_markup, choice)
                     self.assertEqual(json.loads(payload["ephemeral_message_parameters"]), {
                         "receiver_user_id": callback.from_user.id,
                         "callback_query_id": callback.id,
@@ -178,6 +201,10 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     [call.kwargs["receiver_user_id"] for call in self.remember.await_args_list],
                     [111, 222],
+                )
+                self.assertEqual(
+                    [call.kwargs["reply_markup"] for call in self.remember.await_args_list],
+                    [request[0].reply_markup for request in photos],
                 )
                 self.assertEqual(self.refresh.await_count, 2)
                 self.assert_shared_question_untouched()
@@ -199,6 +226,7 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(photos), 2)
         self.assertIn("вы фотограф", photos[-1][0].caption)
         self.assertNotIn("вы преступник", photos[-1][0].caption)
+        self.assert_share_button(photos[-1][0].reply_markup, "фотограф")
         self.assert_shared_question_untouched()
 
 

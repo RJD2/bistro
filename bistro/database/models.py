@@ -87,4 +87,5 @@ class ChartMessage(Base):
     ephemeral_message_id = Column(BigInteger, nullable=False, default=0)
     caption = Column(String, nullable=True)
     parse_mode = Column(String, nullable=True)
+    reply_markup = Column(String, nullable=True)
     statistics_key = Column(String, nullable=False)

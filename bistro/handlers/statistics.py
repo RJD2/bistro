@@ -15,6 +15,7 @@ from bistro.handlers.game import _is_group, _personal_message_options, get_quest
 from bistro.database.models import Answer, Question, User
 from bistro.charts.rendering import render_statistics_chart
 from bistro.ui.telegram_ephemeral import EditEphemeralMessageText
+from bistro.ui.sharing import get_result_keyboard
 from bistro.ui.text_formatting import capitalize_first
 
 
@@ -133,6 +134,7 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
     caption = f"<b>{escape(capitalize_first(question.word))}</b>\n\nВаш выбор: {escape(choice)}"
     chart = await to_thread(render_statistics_chart, statistics)
     photo = types.BufferedInputFile(chart, filename=f"statistics_{question_id}.png")
+    result_keyboard = await get_result_keyboard(callback.bot, choice, question_id)
     message = callback.message
     personal = _is_group(message)
     receiver_id = callback.from_user.id if personal else 0
@@ -146,11 +148,13 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
             chart_caption, parse_mode = None, None
         chart_message = await message.answer_photo(
             photo=photo, caption=chart_caption, parse_mode=parse_mode, **options,
+            reply_markup=result_keyboard,
         )
         await chart_messages.remember_chart(
             bot_id=callback.bot.id, question_id=question_id, message=chart_message,
             receiver_user_id=receiver_id, caption=chart_caption,
             parse_mode=parse_mode, statistics_key=statistics_key(statistics),
+            reply_markup=result_keyboard,
         )
     # Catch answers that arrived while this chart was being rendered or sent.
     await refresh_question_charts(

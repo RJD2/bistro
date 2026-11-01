@@ -2,6 +2,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -30,6 +31,9 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.transport = AsyncMock(return_value=True)
         self.bot = Bot(token="123456:TEST_TOKEN", session=self.transport)
+        self.bot.me = AsyncMock(return_value=types.User(
+            id=self.bot.id, is_bot=True, first_name="Быстротест", username="test_bistro_bot",
+        ))
         self.dp = Dispatcher(storage=MemoryStorage())
         admin.register_handlers_admin(self.dp)
         game.register_handlers_game(self.dp)
@@ -54,6 +58,24 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         for active_patch in self.patches:
             active_patch.start()
             self.addCleanup(active_patch.stop)
+
+    def assert_share_button(self, markup, choice):
+        self.assertIsNotNone(markup)
+        buttons = [button for row in markup.inline_keyboard for button in row]
+        self.assertEqual(len(buttons), 1)
+        button = buttons[0]
+        self.assertEqual(button.text, "📤 Поделиться")
+        self.assertIsNone(button.callback_data)
+        link = urlsplit(button.url)
+        self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+        expected = (
+            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
+        )
+        self.assertEqual(parse_qs(link.query), {"url": [expected]})
+        # iOS decodes percent escapes without converting plus signs to spaces.
+        self.assertNotIn("+", link.query)
+        self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
 
     async def asyncTearDown(self):
         await self.dp.storage.close()
@@ -107,8 +129,9 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Камера NASA &amp; &lt;тест&gt;", result.media.caption)
         self.assertIn("вы преступник", result.media.caption)
         self.assertEqual(result.media.media.data, PNG)
-        self.assertIsNone(result.reply_markup)
+        self.assert_share_button(result.reply_markup, "преступник")
         self.remember.assert_awaited_once()
+        self.assertEqual(self.remember.await_args.kwargs["reply_markup"], result.reply_markup)
         self.refresh.assert_awaited_once_with(
             self.bot, 17, game.get_question_statistics, statistics=self.statistics, chart=PNG,
         )
@@ -133,6 +156,25 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
                     "answerCallbackQuery", "editMessageMedia",
                 ])
 
+    async def test_long_private_result_keeps_share_button_on_separate_chart(self):
+        choice = 'художник C++ & "тест" ' * 60
+        self.question.options = f"{choice},преступник"
+
+        await self.answer_daily_question(option=0)
+
+        methods = self.api_methods()
+        self.assertEqual([method.__api_method__ for method in methods], [
+            "answerCallbackQuery", "editMessageText", "sendPhoto",
+        ])
+        text, photo = methods[-2:]
+        self.assertIn("И вы", text.text)
+        self.assertIsNone(text.reply_markup)
+        self.assert_share_button(photo.reply_markup, choice)
+        registration = self.remember.await_args.kwargs
+        self.assertEqual(registration["reply_markup"], photo.reply_markup)
+        self.assertEqual(registration["caption"], photo.caption)
+        self.assertIsNone(await self.state.get_state())
+
     async def test_repeated_daily_answer_keeps_saved_choice_without_another_vote(self):
         await self.answer_daily_question()
         saved = self.session.add.call_args.args[0]
@@ -144,6 +186,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         result = self.api_methods()[-1]
         self.assertIn("вы преступник", result.media.caption)
         self.assertNotIn("вы фотограф", result.media.caption)
+        self.assert_share_button(result.reply_markup, "преступник")
 
     async def test_association_position_maps_to_result_and_statistics_identity(self):
         self.question = Question(
@@ -161,6 +204,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(f"вы {expected}", result.media.caption)
                 self.assertNotIn("салат", result.media.caption)
                 self.assertNotIn("Рим", result.media.caption)
+                self.assert_share_button(result.reply_markup, expected)
 
     async def test_question_with_incomplete_associations_cannot_record_a_vote(self):
         for associo in (None, "", "  ", "снимок", "снимок,тюрьма,комната", "снимок,", "снимок,СНИМОК"):

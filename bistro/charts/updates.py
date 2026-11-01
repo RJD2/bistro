@@ -1,4 +1,4 @@
-"""Refresh every displayed copy of a question's statistics, preserving captions"""
+"""Refresh displayed statistics, preserving personal captions and keyboards"""
 
 from asyncio import Lock, Task, create_task, gather, sleep, to_thread
 from contextlib import asynccontextmanager
@@ -119,6 +119,10 @@ async def refresh_question_charts(
                     caption=target.caption,
                     parse_mode=target.parse_mode,
                 )
+                reply_markup = (
+                    types.InlineKeyboardMarkup.model_validate_json(target.reply_markup)
+                    if target.reply_markup else None
+                )
                 try:
                     if target.ephemeral_message_id:
                         await bot(EditEphemeralMessageMedia(
@@ -126,10 +130,12 @@ async def refresh_question_charts(
                             receiver_user_id=target.receiver_user_id,
                             ephemeral_message_id=target.ephemeral_message_id,
                             media=media,
+                            reply_markup=reply_markup,
                         ))
                     else:
                         await bot.edit_message_media(
                             chat_id=target.chat_id, message_id=target.message_id, media=media,
+                            reply_markup=reply_markup,
                         )
                 except TelegramBadRequest as error:
                     if "message is not modified" in error.message.casefold():

@@ -16,6 +16,7 @@ from bistro.services.questions import next_available_question, question_choices
 from bistro.handlers.states import GameStates
 from bistro.ui.keyboards import get_keyboard
 from bistro.ui.messages import MESSAGES
+from bistro.ui.sharing import get_result_keyboard
 from bistro.charts.rendering import render_statistics_chart
 from bistro.ui.telegram_ephemeral import EditEphemeralMessageMedia, EditEphemeralMessageText
 from bistro.ui.text_formatting import capitalize_first
@@ -72,6 +73,7 @@ async def _show_group_result(
     *,
     question_id: int,
     chart_key: str,
+    reply_markup: types.InlineKeyboardMarkup,
 ):
     message = callback.message
     ephemeral_id = getattr(message, "ephemeral_message_id", None)
@@ -86,6 +88,7 @@ async def _show_group_result(
                 await callback.bot(EditEphemeralMessageMedia(
                     **edit_options,
                     media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
+                    reply_markup=reply_markup,
                 ))
                 chart_message = message
             else:
@@ -94,6 +97,7 @@ async def _show_group_result(
                     photo=photo,
                     caption=caption,
                     parse_mode="HTML",
+                    reply_markup=reply_markup,
                     **_personal_message_options(callback, replace=True),
                 )
             chart_caption, parse_mode = caption, "HTML"
@@ -106,12 +110,15 @@ async def _show_group_result(
                     caption, parse_mode="HTML", **_personal_message_options(callback, replace=True),
                 )
             await chart_messages.forget_message(callback.bot.id, text_message, callback.from_user.id)
-            chart_message = await message.answer_photo(photo=photo, **_personal_message_options(callback))
+            chart_message = await message.answer_photo(
+                photo=photo, reply_markup=reply_markup, **_personal_message_options(callback),
+            )
             chart_caption, parse_mode = None, None
         await chart_messages.remember_chart(
             bot_id=callback.bot.id, question_id=question_id, message=chart_message,
             receiver_user_id=callback.from_user.id, caption=chart_caption,
             parse_mode=parse_mode, statistics_key=chart_key,
+            reply_markup=reply_markup,
         )
 
 
@@ -132,16 +139,40 @@ async def start_game(message: types.Message, state: FSMContext):
             await message.answer(MESSAGES["game_over"])
             return
 
-        qid = int(question.id)
         choices = question_choices(question)
-        await message.answer(
-            question_text(question),
-            parse_mode="HTML",
-            reply_markup=get_keyboard(choices, qid),
-        )
-        if not _is_group(message):
-            await state.update_data(qid=qid)
-            await state.set_state(GameStates.waiting_for_answer)
+        await _send_question(message, state, question, choices)
+
+
+async def _send_question(
+    message: types.Message, state: FSMContext, question: Question, choices: list[str],
+):
+    qid = int(question.id)
+    await message.answer(
+        question_text(question),
+        parse_mode="HTML",
+        reply_markup=get_keyboard(choices, qid),
+    )
+    if not _is_group(message):
+        await state.update_data(qid=qid)
+        await state.set_state(GameStates.waiting_for_answer)
+
+
+async def start_shared_game(message: types.Message, state: FSMContext, question_id: int):
+    if message.from_user is None or message.chat.type != ChatType.PRIVATE:
+        return
+    async with async_session() as session:
+        question = await session.get(Question, question_id)
+    try:
+        choices = question_choices(question) if question is not None else None
+    except ValueError:
+        choices = None
+    if choices is None:
+        await message.answer("Этот вопрос больше недоступен. Предложим другой Быстротест.")
+        await start_game(message, state)
+        return
+    # A shared link explicitly chooses this question, even if it was answered
+    # before. process_answer will preserve the recipient's saved choice.
+    await _send_question(message, state, question, choices)
 
 
 async def get_question_statistics(question_id: int, session: AsyncSession) -> dict[str, float]:
@@ -256,9 +287,13 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
         chart = await to_thread(render_statistics_chart, stats)
         photo = types.BufferedInputFile(chart, filename=f"statistics_{qid}.png")
         chart_key = statistics_key(stats)
+        result_keyboard = await get_result_keyboard(callback.bot, selected_choice, qid)
 
         if is_group:
-            await _show_group_result(callback, caption, photo, question_id=qid, chart_key=chart_key)
+            await _show_group_result(
+                callback, caption, photo, question_id=qid, chart_key=chart_key,
+                reply_markup=result_keyboard,
+            )
             # The next shared question requires the game button or /play.
             # The finally block still refreshes charts for other participants.
             return
@@ -267,7 +302,7 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
                 if len(caption) <= 1024:
                     await message.edit_media(
                         media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
-                        reply_markup=None,
+                        reply_markup=result_keyboard,
                     )
                     chart_message = message
                     chart_caption, parse_mode = caption, "HTML"
@@ -278,11 +313,13 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
                     parse_mode = None
                     chart_message = await message.answer_photo(
                         photo=photo, caption=chart_caption, parse_mode=parse_mode,
+                        reply_markup=result_keyboard,
                     )
                 await chart_messages.remember_chart(
                     bot_id=callback.bot.id, question_id=qid, message=chart_message,
                     receiver_user_id=0, caption=chart_caption,
                     parse_mode=parse_mode, statistics_key=chart_key,
+                    reply_markup=result_keyboard,
                 )
 
         if action == "autotest_answer":

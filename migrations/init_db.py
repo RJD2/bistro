@@ -27,10 +27,21 @@ def upgrade_questions_associo(connection):
             connection.exec_driver_sql("ALTER TABLE questions ALTER COLUMN associo SET NOT NULL")
 
 
+def upgrade_chart_messages_reply_markup(connection):
+    """Keep result keyboards available when charts refresh after a restart"""
+    columns = {column["name"] for column in inspect(connection).get_columns("chart_messages")}
+    if "reply_markup" not in columns:
+        if_not_exists = "IF NOT EXISTS " if connection.dialect.name == "postgresql" else ""
+        connection.exec_driver_sql(
+            f"ALTER TABLE chart_messages ADD COLUMN {if_not_exists}reply_markup VARCHAR"
+        )
+
+
 async def init():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(upgrade_questions_associo)
+        await conn.run_sync(upgrade_chart_messages_reply_markup)
 
 
 if __name__ == "__main__":

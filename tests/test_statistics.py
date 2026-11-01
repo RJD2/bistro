@@ -4,6 +4,7 @@ from html import escape
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -110,6 +111,9 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         callback.data = "answer:1:0"
         callback.message = message
         callback.answer = AsyncMock()
+        callback.bot.me = AsyncMock(return_value=types.User(
+            id=123456, is_bot=True, first_name="Быстротест", username="test_bistro_bot",
+        ))
         state = AsyncMock(spec=FSMContext)
         png = b"\x89PNG\r\n\x1a\nchart"
 
@@ -158,7 +162,13 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertNotIn("Статистика ответов", media.caption)
                 self.assertNotIn("%", media.caption)
-                self.assertIsNone(message.edit_media.call_args.kwargs["reply_markup"])
+                keyboard = message.edit_media.call_args.kwargs["reply_markup"]
+                button = keyboard.inline_keyboard[0][0]
+                self.assertEqual(button.text, "📤 Поделиться")
+                self.assertEqual(parse_qs(urlsplit(button.url).query), {"url": [
+                    f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+                    "https://t.me/test_bistro_bot?start=question_1",
+                ]})
                 message.answer.assert_awaited_once_with(game.MESSAGES["game_over"])
                 state.clear.assert_awaited_once()
 

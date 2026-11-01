@@ -3,6 +3,7 @@ import os
 import unittest
 from html import escape
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -152,6 +153,9 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.transport = RecordingSession()
         self.bot = Bot(token="123456:TEST_TOKEN", session=self.transport)
+        self.bot.me = AsyncMock(return_value=types.User(
+            id=self.bot.id, is_bot=True, first_name="Быстротест", username="test_bistro_bot",
+        ))
         self.dp = Dispatcher(storage=MemoryStorage())
         statistics.register_handlers_statistics(self.dp)
         admin.register_handlers_admin(self.dp)
@@ -181,6 +185,24 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         for active_patch in self.patches:
             active_patch.start()
             self.addCleanup(active_patch.stop)
+
+    def assert_share_button(self, markup, choice):
+        self.assertIsNotNone(markup)
+        buttons = [button for row in markup.inline_keyboard for button in row]
+        self.assertEqual(len(buttons), 1)
+        button = buttons[0]
+        self.assertEqual(button.text, "📤 Поделиться")
+        self.assertIsNone(button.callback_data)
+        link = urlsplit(button.url)
+        self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+        expected = (
+            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
+        )
+        self.assertEqual(parse_qs(link.query), {"url": [expected]})
+        # iOS decodes percent escapes without converting plus signs to spaces.
+        self.assertNotIn("+", link.query)
+        self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
 
     async def asyncTearDown(self):
         await self.dp.storage.close()
@@ -298,6 +320,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
             f"Ваш выбор: {escape(choice)}"
         ))
         self.assertEqual(photo.parse_mode, "HTML")
+        self.assert_share_button(photo.reply_markup, choice)
         self.assertEqual(next(iter(files.values())).data, PNG)
         self.assertNotIn("ephemeral_message_parameters", payload)
         self.assertEqual(self.requests("editMessageText"), [])
@@ -309,6 +332,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(registration["receiver_user_id"], 0)
         self.assertEqual(registration["caption"], photo.caption)
         self.assertEqual(registration["parse_mode"], "HTML")
+        self.assertEqual(registration["reply_markup"], photo.reply_markup)
         self.refresh.assert_awaited_once()
         statement = self.session.execute.await_args.args[0].compile(dialect=postgresql.dialect())
         self.assertIn("users.tg_id =", str(statement))
@@ -362,7 +386,8 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
             f"statistics:word:{USER_ID}:1", chat_type=ChatType.SUPERGROUP, ephemeral_id=812,
         )
 
-        _, payload, _ = self.requests("sendPhoto")[0]
+        photo, payload, _ = self.requests("sendPhoto")[0]
+        self.assert_share_button(photo.reply_markup, "фотограф SQL & художник")
         self.assertEqual(json.loads(payload["ephemeral_message_parameters"]), {
             "receiver_user_id": USER_ID, "callback_query_id": f"callback_{USER_ID}",
         })
@@ -389,6 +414,8 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(text.text, expected)
                 self.assertEqual(text.parse_mode, "HTML")
                 self.assertIsNone(photo.caption)
+                self.assert_share_button(photo.reply_markup, choice)
+                self.assertEqual(self.remember.await_args.kwargs["reply_markup"], photo.reply_markup)
                 self.assertIsNone(self.remember.await_args.kwargs["caption"])
                 self.assertIsNone(self.remember.await_args.kwargs["parse_mode"])
                 if chat_type == ChatType.SUPERGROUP:

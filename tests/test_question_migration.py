@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.dialects.postgresql import insert
 
 from migrations.add_questions import QUESTIONS
-from migrations.init_db import upgrade_questions_associo
+from migrations.init_db import upgrade_chart_messages_reply_markup, upgrade_questions_associo
 from bistro.database.models import Base, Question
 
 
@@ -63,6 +63,51 @@ class QuestionMigrationTests(unittest.TestCase):
                 "INSERT INTO questions (word, options) VALUES ('цезарь', 'салат,Рим')"
             )
             self.assertEqual(connection.exec_driver_sql("SELECT associo FROM questions").scalar_one(), "")
+
+    def test_chart_keyboard_upgrade_preserves_existing_targets_and_is_repeatable(self):
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE chart_messages (id INTEGER PRIMARY KEY, bot_id BIGINT NOT NULL, "
+                "question_id INTEGER NOT NULL, chat_id BIGINT NOT NULL, "
+                "receiver_user_id BIGINT NOT NULL, message_id BIGINT NOT NULL, "
+                "ephemeral_message_id BIGINT NOT NULL, caption VARCHAR, parse_mode VARCHAR, "
+                "statistics_key VARCHAR NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO chart_messages VALUES "
+                "(1, 123, 7, -100, 42, 0, 9, 'Вы император', 'HTML', 'previous')"
+            )
+            upgrade_chart_messages_reply_markup(connection)
+            upgrade_chart_messages_reply_markup(connection)
+            self.assertEqual(connection.exec_driver_sql(
+                "SELECT question_id, receiver_user_id, ephemeral_message_id, caption, "
+                "statistics_key, reply_markup FROM chart_messages"
+            ).one(), (7, 42, 9, "Вы император", "previous", None))
+            connection.exec_driver_sql(
+                "UPDATE chart_messages SET reply_markup = '{\"inline_keyboard\": []}' WHERE id = 1"
+            )
+            upgrade_chart_messages_reply_markup(connection)
+            self.assertEqual(connection.exec_driver_sql(
+                "SELECT reply_markup FROM chart_messages WHERE id = 1"
+            ).scalar_one(), '{"inline_keyboard": []}')
+
+    def test_fresh_database_has_chart_keyboard_and_accepts_repeat_upgrade(self):
+        with self.engine.begin() as connection:
+            Base.metadata.create_all(connection)
+            upgrade_chart_messages_reply_markup(connection)
+            upgrade_chart_messages_reply_markup(connection)
+            columns = {column["name"]: column for column in inspect(connection).get_columns("chart_messages")}
+            self.assertTrue(columns["reply_markup"]["nullable"])
+
+    def test_postgres_chart_keyboard_upgrade_handles_concurrent_startup(self):
+        connection = MagicMock(dialect=SimpleNamespace(name="postgresql"))
+        inspector = MagicMock()
+        inspector.get_columns.return_value = [{"name": "id"}]
+        with patch("migrations.init_db.inspect", return_value=inspector):
+            upgrade_chart_messages_reply_markup(connection)
+        connection.exec_driver_sql.assert_called_once_with(
+            "ALTER TABLE chart_messages ADD COLUMN IF NOT EXISTS reply_markup VARCHAR"
+        )
 
     def test_manually_added_nullable_column_keeps_values_and_normalizes_null(self):
         with self.engine.begin() as connection:

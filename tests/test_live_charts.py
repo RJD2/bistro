@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
-from aiogram import Bot
+from aiogram import Bot, types
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import (
     TelegramBadRequest,
@@ -82,7 +82,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
         await chart_updates.stop_chart_updates()
         await self.bot.session.close()
 
-    def add_chart(self, receiver, caption=None, *, regular=False, key="old"):
+    def add_chart(self, receiver, caption=None, *, regular=False, key="old", reply_markup=None):
         chart = SimpleNamespace(
             id=len(self.targets) + 1,
             bot_id=self.bot.id,
@@ -93,6 +93,7 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
             ephemeral_message_id=0 if regular else 1000 + len(self.targets),
             caption=caption,
             parse_mode="HTML" if caption is not None else None,
+            reply_markup=reply_markup.model_dump_json(exclude_none=True) if reply_markup else None,
             statistics_key=key,
         )
         self.targets.append(chart)
@@ -130,6 +131,24 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.mark_updated.await_count, 4)
         self.assertTrue(all(target.statistics_key == chart_updates.statistics_key(self.statistics)
                             for target in self.targets))
+
+    async def test_reloaded_regular_and_personal_charts_keep_each_players_share_button(self):
+        keyboards = []
+        for receiver, choice, regular in ((111, "фотограф", False), (222, "император", True)):
+            keyboard = types.InlineKeyboardMarkup(inline_keyboard=[[
+                types.InlineKeyboardButton(text="Поделиться", url=f"https://t.me/share/url?text={choice}"),
+            ]])
+            keyboards.append(keyboard)
+            self.add_chart(receiver, f"Вы {choice}", regular=regular, reply_markup=keyboard)
+        # Discard the original keyboard objects; refresh must reconstruct from stored JSON.
+        self.targets = [SimpleNamespace(**chart.__dict__) for chart in self.targets]
+
+        await self.refresh()
+
+        self.assertEqual([method.reply_markup for method in self.transport.requests], keyboards)
+        self.assertEqual([method.__api_method__ for method in self.transport.requests], [
+            "editEphemeralMessageMedia", "editMessageMedia",
+        ])
 
     async def test_unchanged_charts_are_not_uploaded_again(self):
         current_key = chart_updates.statistics_key(self.statistics)
