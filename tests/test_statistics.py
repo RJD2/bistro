@@ -4,6 +4,7 @@ from html import escape
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -164,13 +165,11 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
                 keyboard = message.edit_media.call_args.kwargs["reply_markup"]
                 button = keyboard.inline_keyboard[0][0]
                 self.assertEqual(button.text, "📤 Поделиться")
-                self.assertIsNone(button.url)
-                chooser = button.switch_inline_query_chosen_chat
-                self.assertIsNotNone(chooser)
-                self.assertEqual(chooser.query, "share:1")
-                self.assertTrue(chooser.allow_user_chats)
-                self.assertTrue(chooser.allow_group_chats)
-                self.assertTrue(chooser.allow_channel_chats)
+                self.assertIsNone(button.switch_inline_query_chosen_chat)
+                self.assertEqual(parse_qs(urlsplit(button.url).query), {"url": [
+                    f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+                    "https://t.me/test_bistro_bot?start=question_1",
+                ]})
                 message.answer.assert_awaited_once_with(game.MESSAGES["game_over"])
                 state.clear.assert_awaited_once()
 

@@ -3,6 +3,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -101,20 +102,26 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
             active_patch.start()
             self.addCleanup(active_patch.stop)
 
-    def assert_share_button(self, markup):
+    def assert_share_button(self, markup, choice):
         self.assertIsNotNone(markup)
         buttons = [button for row in markup.inline_keyboard for button in row]
         self.assertEqual(len(buttons), 1)
         button = buttons[0]
         self.assertEqual(button.text, "📤 Поделиться")
         self.assertIsNone(button.callback_data)
-        self.assertIsNone(button.url)
-        chooser = button.switch_inline_query_chosen_chat
-        self.assertIsNotNone(chooser)
-        self.assertEqual(chooser.query, f"share:{self.question.id}")
-        self.assertTrue(chooser.allow_user_chats)
-        self.assertTrue(chooser.allow_group_chats)
-        self.assertTrue(chooser.allow_channel_chats)
+        self.assertIsNone(button.switch_inline_query)
+        self.assertIsNone(button.switch_inline_query_current_chat)
+        self.assertIsNone(button.switch_inline_query_chosen_chat)
+        link = urlsplit(button.url)
+        self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+        expected = (
+            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
+        )
+        self.assertEqual(parse_qs(link.query), {"url": [expected]})
+        # iOS decodes percent escapes without converting plus signs to spaces.
+        self.assertNotIn("+", link.query)
+        self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
 
     async def asyncTearDown(self):
         await self.dp.storage.close()
@@ -231,7 +238,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                 edits = self.requests("editMessageMedia")
                 self.assertEqual(len(edits), 1)
                 self.assertIn("вы фотограф SQL &amp; художник", edits[0][0].media.caption)
-                self.assert_share_button(edits[0][0].reply_markup)
+                self.assert_share_button(edits[0][0].reply_markup, "фотограф SQL & художник")
                 self.assertEqual(self.remember_chart.await_args.kwargs["reply_markup"],
                                  edits[0][0].reply_markup)
                 messages = self.requests("sendMessage")
@@ -284,7 +291,10 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(parameters["callback_query_id"], f"callback_{user_id}_{0 if user_id == 111 else 1}")
                     self.assertIs(parameters["replace_callback_query_message"], True)
                     self.assertIn(f"вы {selected}", request[0].caption)
-                    self.assert_share_button(request[0].reply_markup)
+                    self.assert_share_button(
+                        request[0].reply_markup,
+                        "фотограф SQL & художник" if user_id == 111 else "преступник",
+                    )
                     self.assertIn("Камера NASA &amp; &lt;тест&gt;", request[0].caption)
                     self.assertEqual(len(request[2]), 1)
                     self.assertEqual(next(iter(request[2].values())).data, PNG)
@@ -445,10 +455,10 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(old_result_edit.receiver_user_id, 111)
         self.assertIn("вы фотограф SQL &amp; художник", old_result_edit.media.caption)
         self.assertNotIn("вы преступник", old_result_edit.media.caption)
-        self.assert_share_button(old_result_edit.reply_markup)
+        self.assert_share_button(old_result_edit.reply_markup, "фотограф SQL & художник")
         new_result = self.requests("sendPhoto")[-1][0]
         self.assertIn("вы преступник", new_result.caption)
-        self.assert_share_button(new_result.reply_markup)
+        self.assert_share_button(new_result.reply_markup, "преступник")
         self.assertEqual(old_result_edit.media.media.data, new_result.photo.data)
         self.assertEqual(new_result.photo.data, b"chart:50.0")
         self.assertEqual(self.requests("sendMessage"), [])
@@ -532,7 +542,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(photos), 2)
         self.assertIn("вы фотограф SQL &amp; художник", photos[-1][0].caption)
         self.assertNotIn("вы преступник", photos[-1][0].caption)
-        self.assert_share_button(photos[-1][0].reply_markup)
+        self.assert_share_button(photos[-1][0].reply_markup, "фотограф SQL & художник")
 
     async def test_answer_to_ephemeral_question_edits_only_that_personal_message(self):
         self.configure_database()
@@ -546,7 +556,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(method.receiver_user_id, 222)
         self.assertEqual(method.ephemeral_message_id, 812)
         self.assertIn("вы фотограф SQL &amp; художник", method.media.caption)
-        self.assert_share_button(method.reply_markup)
+        self.assert_share_button(method.reply_markup, "фотограф SQL & художник")
         self.assertEqual(json.loads(payload["media"])["type"], "photo")
         self.assertEqual(next(iter(files.values())).data, PNG)
         self.assertEqual(self.requests("sendMessage"), [])
@@ -606,7 +616,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                     "callback_query_id": "callback_222_0",
                 })
                 self.assertEqual(next(iter(photos[0][2].values())).data, PNG)
-                self.assert_share_button(photos[0][0].reply_markup)
+                self.assert_share_button(photos[0][0].reply_markup, choice)
                 registration = self.remember_chart.await_args.kwargs
                 self.assertNotEqual(registration["message"].ephemeral_message_id, ephemeral_id)
                 self.assertEqual(registration["receiver_user_id"], 222)

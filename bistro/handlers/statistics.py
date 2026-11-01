@@ -135,7 +135,7 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
     caption = result_text(question, choice)
     chart = await to_thread(render_statistics_chart, statistics)
     photo = types.BufferedInputFile(chart, filename=f"statistics_{question_id}.png")
-    result_keyboard = get_result_keyboard(question_id)
+    result_keyboard = await get_result_keyboard(callback.bot, choice, question_id)
     message = callback.message
     personal = _is_group(message)
     receiver_id = callback.from_user.id if personal else 0

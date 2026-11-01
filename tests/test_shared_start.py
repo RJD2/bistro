@@ -1,6 +1,7 @@
 import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -148,10 +149,13 @@ class SharedStartTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_recipient_gets_linked_question_before_lower_numbered_questions(self):
         self.database.execute(delete(Answer))
         self.database.commit()
-        keyboard = get_result_keyboard(self.shared.id)
-        query = keyboard.inline_keyboard[0][0].switch_inline_query_chosen_chat.query
-        self.assertEqual(query, "share:42")
-        payload = f"question_{query.split(':')[1]}"
+        keyboard = await get_result_keyboard(self.bot, "алкоголик", self.shared.id)
+        draft = parse_qs(urlsplit(keyboard.inline_keyboard[0][0].url).query)["url"][0]
+        self.assertEqual(draft, (
+            "Оказывается я алкоголик, узнай кто ты в Быстроботе\n"
+            f"https://t.me/{BOT_USERNAME}?start=question_42"
+        ))
+        payload = parse_qs(urlsplit(draft.splitlines()[-1]).query)["start"][0]
 
         await self.send(payload)
 

@@ -2,6 +2,7 @@ import os
 import unittest
 from html.parser import HTMLParser
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -134,7 +135,10 @@ class SharingTests(unittest.IsolatedAsyncioTestCase):
         content = result.input_message_content
         self.assertIsInstance(content, types.InputTextMessageContent)
         self.assertEqual(content.parse_mode, "HTML")
-        self.assertIs(content.link_preview_options.is_disabled, True)
+        self.assertIs(content.link_preview_options.is_disabled, False)
+        self.assertEqual(content.link_preview_options.url, (
+            f"https://t.me/{BOT_USERNAME}?start=question_{question_id}"
+        ))
         rendered = SharedText(content.message_text)
         self.assertEqual("".join(rendered.visible), (
             f"Оказывается я {choice}, узнай кто ты в Быстроботе"
@@ -143,19 +147,31 @@ class SharingTests(unittest.IsolatedAsyncioTestCase):
             f"https://t.me/{BOT_USERNAME}?start=question_{question_id}", "Быстроботе",
         ]])
 
-    async def test_share_button_opens_recipient_chooser_with_question_query_only(self):
-        keyboard = get_result_keyboard(QUESTION_ID)
-        button = keyboard.inline_keyboard[0][0]
-        self.assertEqual(button.text, "📤 Поделиться")
-        self.assertIsNone(button.url)
-        self.assertIsNone(button.callback_data)
-        chooser = button.switch_inline_query_chosen_chat
-        self.assertEqual(chooser.query, "share:42")
-        self.assertIs(chooser.allow_user_chats, True)
-        self.assertIs(chooser.allow_group_chats, True)
-        self.assertIs(chooser.allow_channel_chats, True)
+    async def test_share_button_prepares_plain_message_with_visible_original_question_link(self):
+        for choice, question_id in (("алкоголик", QUESTION_ID), ('художник C++ & "тест" 🧑‍🎨', 7)):
+            with self.subTest(choice=choice, question_id=question_id):
+                keyboard = await get_result_keyboard(self.bot, choice, question_id)
+                button = keyboard.inline_keyboard[0][0]
+                self.assertEqual(button.text, "📤 Поделиться")
+                self.assertIsNone(button.callback_data)
+                self.assertIsNone(button.switch_inline_query)
+                self.assertIsNone(button.switch_inline_query_current_chat)
+                self.assertIsNone(button.switch_inline_query_chosen_chat)
+                link = urlsplit(button.url)
+                self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+                expected = (
+                    f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+                    f"https://t.me/{BOT_USERNAME}?start=question_{question_id}"
+                )
+                self.assertEqual(parse_qs(link.query), {"url": [expected]})
+                # iOS decodes percent escapes without treating '+' as a space.
+                self.assertNotIn("+", link.query)
+                self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
+                bot_link = urlsplit(expected.splitlines()[-1])
+                self.assertEqual(bot_link.path, f"/{BOT_USERNAME}")
+                self.assertEqual(parse_qs(bot_link.query), {"start": [f"question_{question_id}"]})
 
-    async def test_result_has_clickable_bot_word_and_no_separate_url_or_added_quotes(self):
+    async def test_legacy_inline_result_keeps_clickable_word_and_enables_original_question_preview(self):
         await self.send()
 
         self.assertEqual(len(self.answers()), 1)

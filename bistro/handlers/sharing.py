@@ -1,4 +1,4 @@
-"""Share the requesting player's saved result with a linked bot invitation."""
+"""Keep previously sent inline share buttons working with link previews."""
 
 from html import escape
 import re
@@ -39,7 +39,7 @@ async def share_result(inline: types.InlineQuery):
                 input_message_content=types.InputTextMessageContent(
                     message_text=text,
                     parse_mode="HTML",
-                    link_preview_options=types.LinkPreviewOptions(is_disabled=True),
+                    link_preview_options=types.LinkPreviewOptions(url=bot_link, is_disabled=False),
                 ),
             ))
     # Inline queries are editable and results are specific to their sender.

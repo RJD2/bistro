@@ -3,6 +3,7 @@ import os
 import unittest
 from html import escape
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -185,20 +186,26 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
             active_patch.start()
             self.addCleanup(active_patch.stop)
 
-    def assert_share_button(self, markup):
+    def assert_share_button(self, markup, choice):
         self.assertIsNotNone(markup)
         buttons = [button for row in markup.inline_keyboard for button in row]
         self.assertEqual(len(buttons), 1)
         button = buttons[0]
         self.assertEqual(button.text, "📤 Поделиться")
         self.assertIsNone(button.callback_data)
-        self.assertIsNone(button.url)
-        chooser = button.switch_inline_query_chosen_chat
-        self.assertIsNotNone(chooser)
-        self.assertEqual(chooser.query, f"share:{self.question.id}")
-        self.assertTrue(chooser.allow_user_chats)
-        self.assertTrue(chooser.allow_group_chats)
-        self.assertTrue(chooser.allow_channel_chats)
+        self.assertIsNone(button.switch_inline_query)
+        self.assertIsNone(button.switch_inline_query_current_chat)
+        self.assertIsNone(button.switch_inline_query_chosen_chat)
+        link = urlsplit(button.url)
+        self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+        expected = (
+            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
+        )
+        self.assertEqual(parse_qs(link.query), {"url": [expected]})
+        # iOS decodes percent escapes without converting plus signs to spaces.
+        self.assertNotIn("+", link.query)
+        self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
 
     async def asyncTearDown(self):
         await self.dp.storage.close()
@@ -317,7 +324,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
             f"И вы {escape(choice)}"
         ))
         self.assertEqual(photo.parse_mode, "HTML")
-        self.assert_share_button(photo.reply_markup)
+        self.assert_share_button(photo.reply_markup, choice)
         self.assertEqual(next(iter(files.values())).data, PNG)
         self.assertNotIn("ephemeral_message_parameters", payload)
         self.assertEqual(self.requests("editMessageText"), [])
@@ -396,7 +403,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
             "И вы программист"
         ))
         self.assertEqual(photo.parse_mode, "HTML")
-        self.assert_share_button(photo.reply_markup)
+        self.assert_share_button(photo.reply_markup, "программист")
         self.assertEqual(json.loads(payload["ephemeral_message_parameters"]), {
             "receiver_user_id": USER_ID, "callback_query_id": f"callback_{USER_ID}",
         })
@@ -425,7 +432,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(text.text, expected)
                 self.assertEqual(text.parse_mode, "HTML")
                 self.assertIsNone(photo.caption)
-                self.assert_share_button(photo.reply_markup)
+                self.assert_share_button(photo.reply_markup, choice)
                 self.assertEqual(self.remember.await_args.kwargs["reply_markup"], photo.reply_markup)
                 self.assertIsNone(self.remember.await_args.kwargs["caption"])
                 self.assertIsNone(self.remember.await_args.kwargs["parse_mode"])

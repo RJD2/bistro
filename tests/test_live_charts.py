@@ -17,7 +17,6 @@ from aiogram.exceptions import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bistro.charts import updates as chart_updates
-from bistro.ui.sharing import get_result_keyboard
 
 
 PNG = b"\x89PNG\r\n\x1a\nnew statistics"
@@ -134,12 +133,25 @@ class LiveChartTests(unittest.IsolatedAsyncioTestCase):
                             for target in self.targets))
 
     async def test_reloaded_regular_and_personal_charts_keep_each_players_share_button(self):
-        keyboards = []
-        for receiver, choice, regular in ((111, "фотограф", False), (222, "император", True)):
-            keyboard = get_result_keyboard(1) if not regular else types.InlineKeyboardMarkup(inline_keyboard=[[
-                types.InlineKeyboardButton(text="Поделиться", url=f"https://t.me/share/url?text={choice}"),
-            ]])
-            keyboards.append(keyboard)
+        keyboards = [
+            types.InlineKeyboardMarkup(inline_keyboard=[[
+                types.InlineKeyboardButton(
+                    text="Поделиться",
+                    switch_inline_query_chosen_chat=types.SwitchInlineQueryChosenChat(
+                        query="share:1", allow_user_chats=True,
+                    ),
+                ),
+            ]]),
+            types.InlineKeyboardMarkup(inline_keyboard=[[
+                types.InlineKeyboardButton(
+                    text="Поделиться",
+                    url="https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bistro_bot%3Fstart%3Dquestion_1",
+                ),
+            ]]),
+        ]
+        for (receiver, choice, regular), keyboard in zip(
+            ((111, "фотограф", False), (222, "император", True)), keyboards,
+        ):
             self.add_chart(receiver, f"Вы {choice}", regular=regular, reply_markup=keyboard)
         # Discard the original keyboard objects; refresh must reconstruct from stored JSON.
         self.targets = [SimpleNamespace(**chart.__dict__) for chart in self.targets]

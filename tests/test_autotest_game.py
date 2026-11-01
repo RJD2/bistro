@@ -2,6 +2,7 @@ import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, unquote, urlsplit
 
 os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro")
 
@@ -58,20 +59,26 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
             active_patch.start()
             self.addCleanup(active_patch.stop)
 
-    def assert_share_button(self, markup):
+    def assert_share_button(self, markup, choice):
         self.assertIsNotNone(markup)
         buttons = [button for row in markup.inline_keyboard for button in row]
         self.assertEqual(len(buttons), 1)
         button = buttons[0]
         self.assertEqual(button.text, "📤 Поделиться")
         self.assertIsNone(button.callback_data)
-        self.assertIsNone(button.url)
-        chooser = button.switch_inline_query_chosen_chat
-        self.assertIsNotNone(chooser)
-        self.assertEqual(chooser.query, f"share:{self.question.id}")
-        self.assertTrue(chooser.allow_user_chats)
-        self.assertTrue(chooser.allow_group_chats)
-        self.assertTrue(chooser.allow_channel_chats)
+        self.assertIsNone(button.switch_inline_query)
+        self.assertIsNone(button.switch_inline_query_current_chat)
+        self.assertIsNone(button.switch_inline_query_chosen_chat)
+        link = urlsplit(button.url)
+        self.assertEqual((link.scheme, link.netloc, link.path), ("https", "t.me", "/share/url"))
+        expected = (
+            f"Оказывается я {choice}, узнай кто ты в Быстроботе\n"
+            f"https://t.me/test_bistro_bot?start=question_{self.question.id}"
+        )
+        self.assertEqual(parse_qs(link.query), {"url": [expected]})
+        # iOS decodes percent escapes without converting plus signs to spaces.
+        self.assertNotIn("+", link.query)
+        self.assertEqual(unquote(link.query.removeprefix("url=")), expected)
 
     async def asyncTearDown(self):
         await self.dp.storage.close()
@@ -125,7 +132,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Камера NASA &amp; &lt;тест&gt;", result.media.caption)
         self.assertIn("вы преступник", result.media.caption)
         self.assertEqual(result.media.media.data, PNG)
-        self.assert_share_button(result.reply_markup)
+        self.assert_share_button(result.reply_markup, "преступник")
         self.remember.assert_awaited_once()
         self.assertEqual(self.remember.await_args.kwargs["reply_markup"], result.reply_markup)
         self.refresh.assert_awaited_once_with(
@@ -165,7 +172,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         text, photo = methods[-2:]
         self.assertIn("И вы", text.text)
         self.assertIsNone(text.reply_markup)
-        self.assert_share_button(photo.reply_markup)
+        self.assert_share_button(photo.reply_markup, choice)
         registration = self.remember.await_args.kwargs
         self.assertEqual(registration["reply_markup"], photo.reply_markup)
         self.assertEqual(registration["caption"], photo.caption)
@@ -182,7 +189,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         result = self.api_methods()[-1]
         self.assertIn("вы преступник", result.media.caption)
         self.assertNotIn("вы фотограф", result.media.caption)
-        self.assert_share_button(result.reply_markup)
+        self.assert_share_button(result.reply_markup, "преступник")
 
     async def test_association_position_maps_to_result_and_statistics_identity(self):
         self.question = Question(
@@ -200,7 +207,7 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(f"вы {expected}", result.media.caption)
                 self.assertNotIn("салат", result.media.caption)
                 self.assertNotIn("Рим", result.media.caption)
-                self.assert_share_button(result.reply_markup)
+                self.assert_share_button(result.reply_markup, expected)
 
     async def test_question_with_incomplete_associations_cannot_record_a_vote(self):
         for associo in (None, "", "  ", "снимок", "снимок,тюрьма,комната", "снимок,", "снимок,СНИМОК"):
