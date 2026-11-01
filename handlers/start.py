@@ -20,8 +20,19 @@ async def cmd_start(message: types.Message):
         reply_markup=await get_main_menu_for_chat(message.chat.id, is_admin=is_owner_chat(message)),
     )
 
+
+async def cmd_stop(message: types.Message):
+    if message.chat.type not in {"private", "group", "supergroup"}:
+        return
+    await message.answer(
+        "Клавиатура скрыта. Чтобы вернуть меню, отправьте /start.",
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
+
+
 async def cmd_help(message: types.Message):
     text = MESSAGES["help"] + "\n\n/play — начать или продолжить тест\n/reset — сбросить свой прогресс"
+    text += "\n/start — показать меню\n/stop — скрыть нижнюю клавиатуру"
     text += "\n/autotest или «Автотест» — включить или отключить ежедневный Быстротест"
     text += "\n/statistics или «📊 Статистика» — отвеченные слова, графики и ваш выбор"
     if message.chat.type in {"group", "supergroup"}:
@@ -41,4 +52,5 @@ async def cmd_help(message: types.Message):
 
 def register_handlers_start(dp: Dispatcher):
     dp.message.register(cmd_start, Command("start"))
+    dp.message.register(cmd_stop, Command("stop"))
     dp.message.register(cmd_help, Command("help"))

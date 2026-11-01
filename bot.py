@@ -18,8 +18,9 @@ dp.shutdown.register(stop_chart_updates)
 
 register_handlers_autotest(dp)
 register_handlers_statistics(dp)
-register_handlers_admin(dp)
+# Menu controls must work before the question wizards' catch-all handlers.
 register_handlers_start(dp)
+register_handlers_admin(dp)
 register_handlers_game(dp)
 
 async def main():
