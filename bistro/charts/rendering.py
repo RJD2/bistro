@@ -15,15 +15,15 @@ from bistro.ui.text_formatting import capitalize_first
 
 
 COLORS = (
-    "#2563eb", "#f59e0b", "#16a34a", "#9333ea",
-    "#dc2626", "#0891b2", "#db2777", "#64748b",
+    "#2563eb", "#f59e0b", "#dc2626", "#9333ea",
+    "#16a34a", "#0891b2", "#db2777", "#64748b",
 )
 GRADIENT_COLORS = (
     ("#00d9f4", "#0044ff"),
     ("#fff500", "#ff9800"),
-    ("#79efad", "#16a34a"),
-    ("#d58aff", "#7931e8"),
     ("#ff8b9c", "#e63357"),
+    ("#d58aff", "#7931e8"),
+    ("#79efad", "#16a34a"),
     ("#56e9ee", "#008caa"),
     ("#ff9ae3", "#c82eae"),
     ("#b8caec", "#566f9c"),
