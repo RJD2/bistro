@@ -233,8 +233,8 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(edits), 1)
                     self.assertIn("вы фотограф SQL &amp; художник", edits[0][0].media.caption)
                     self.assert_share_button(edits[0][0].reply_markup, "фотограф SQL & художник")
-                    self.assertEqual(self.remember_chart.await_args.kwargs["reply_markup"],
-                                     edits[0][0].reply_markup)
+                    self.remember_chart.assert_not_awaited()
+                    self.refresh_charts.assert_not_awaited()
                     messages = self.requests("sendMessage")
                     self.assertEqual(len(messages), 1)
                     if next_question is None:
@@ -486,6 +486,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
                 parse_mode=kwargs["parse_mode"], statistics_key=kwargs["statistics_key"],
                 reply_markup=kwargs["reply_markup"].model_dump_json(exclude_none=True),
                 selected_choice=kwargs["selected_choice"],
+                live_updates=kwargs["live_updates"],
             )
 
         async def forget(bot_id, message, receiver):
@@ -504,9 +505,10 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
             patch.object(chart_updates, "async_session", self.session_factory),
             patch.object(chart_updates, "render_statistics_chart", side_effect=render),
             patch.object(chart_updates.chart_messages, "list_charts", AsyncMock(
-                side_effect=lambda bot_id, qid: [
+                side_effect=lambda bot_id, qid, *, chat_id: [
                     target for target in targets.values()
                     if target.bot_id == bot_id and target.question_id == qid
+                    and target.chat_id == chat_id and target.live_updates
                 ],
             )),
             patch.object(chart_updates.chart_messages, "get_chart", AsyncMock(
@@ -543,28 +545,34 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(target.statistics_key == game.statistics_key(self.statistics)
                             for target in targets.values()))
 
-    async def test_reset_refreshes_affected_questions_after_saving_and_confirming(self):
-        affected = MagicMock()
-        affected.all.return_value = [(1,), (3,)]
-        self.session.execute.side_effect = [affected, MagicMock()]
-        message = types.Message.model_validate({
-            "message_id": 19,
-            "date": 1700000000,
-            "chat": {"id": CHAT_ID, "type": "supergroup"},
-            "from": {"id": 222, "is_bot": False, "first_name": "Игрок"},
-            "text": "/reset",
-            "entities": [{"type": "bot_command", "offset": 0, "length": 6}],
-        }, context={"bot": self.bot})
+    async def test_reset_saves_and_confirms_without_refreshing_charts(self):
+        for chat_type in (ChatType.PRIVATE, ChatType.GROUP, ChatType.SUPERGROUP):
+            with self.subTest(chat_type=chat_type):
+                self.session.reset_mock()
+                self.session.execute.side_effect = [MagicMock()]
+                self.transport.requests.clear()
+                message = types.Message.model_validate({
+                    "message_id": 19,
+                    "date": 1700000000,
+                    "chat": {"id": CHAT_ID, "type": chat_type},
+                    "from": {"id": 222, "is_bot": False, "first_name": "Игрок"},
+                    "text": "/reset",
+                    "entities": [{"type": "bot_command", "offset": 0, "length": 6}],
+                }, context={"bot": self.bot})
+                state = self.dp.fsm.get_context(bot=self.bot, chat_id=CHAT_ID, user_id=222)
+                await state.set_state(GameStates.waiting_for_answer)
+                await state.set_data({"qid": 1})
 
-        async def after_confirmation(bot, question_id, get_statistics):
-            self.session.commit.assert_awaited_once()
-            self.assertIn("Ваш прогресс сброшен", self.requests("sendMessage")[-1][0].text)
+                await self.dp.feed_update(self.bot, types.Update(update_id=1, message=message))
 
-        self.refresh_charts.side_effect = after_confirmation
-        await self.dp.feed_update(self.bot, types.Update(update_id=1, message=message))
-
-        self.assertEqual([call.args[1] for call in self.refresh_charts.await_args_list], [1, 3])
-        self.session.get.assert_awaited_once_with(User, 1222, with_for_update=True)
+                self.refresh_charts.assert_not_awaited()
+                self.session.get.assert_awaited_once_with(User, 1222, with_for_update=True)
+                self.session.commit.assert_awaited_once()
+                self.assertEqual(self.session.execute.await_count, 1)
+                self.assertTrue(str(self.session.execute.await_args.args[0]).startswith("DELETE FROM answers"))
+                self.assertIn("Ваш прогресс сброшен", self.requests("sendMessage")[-1][0].text)
+                self.assertIsNone(await state.get_state())
+                self.assertEqual(await state.get_data(), {})
 
     async def test_committed_vote_refreshes_others_even_if_current_delivery_fails(self):
         cases = (
@@ -596,6 +604,7 @@ class GroupGameTests(unittest.IsolatedAsyncioTestCase):
 
                 self.refresh_charts.assert_awaited_once()
                 self.assertEqual(self.refresh_charts.await_args.args[1], 1)
+                self.assertEqual(self.refresh_charts.await_args.kwargs["chat_id"], CHAT_ID)
                 self.assertEqual(self.remember_chart.await_count, 0)
                 for method, payload, _ in self.transport.requests:
                     if method.__api_method__ in {"sendPhoto", "sendMessage"}:

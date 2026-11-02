@@ -1,4 +1,4 @@
-"""Refresh displayed statistics, preserving personal captions and keyboards"""
+"""Refresh group game results only within the chat where an answer arrived"""
 
 from asyncio import Lock, Task, create_task, gather, sleep, to_thread
 from contextlib import asynccontextmanager
@@ -20,12 +20,12 @@ from bistro.ui.telegram_ephemeral import EditEphemeralMessageMedia
 
 logger = logging.getLogger(__name__)
 _locks: WeakValueDictionary[tuple, Lock] = WeakValueDictionary()
-_scheduled_retries: dict[tuple[int, int], Task] = {}
+_scheduled_retries: dict[tuple[int, int, int], Task] = {}
 _retry_tasks: set[Task] = set()
 
 
-def _schedule_retry(bot: Bot, question_id: int, get_statistics, delay: float) -> None:
-    key = (bot.id, question_id)
+def _schedule_retry(bot: Bot, question_id: int, get_statistics, delay: float, *, chat_id: int) -> None:
+    key = (bot.id, chat_id, question_id)
     if key in _scheduled_retries:
         return
 
@@ -33,7 +33,7 @@ def _schedule_retry(bot: Bot, question_id: int, get_statistics, delay: float) ->
         try:
             await sleep(max(1, delay))
             _scheduled_retries.pop(key, None)
-            await refresh_question_charts(bot, question_id, get_statistics)
+            await refresh_question_charts(bot, question_id, get_statistics, chat_id=chat_id)
         except Exception as error:
             # Keep references in the database for a later answer or retry.
             logger.warning("Не удалось повторить обновление диаграмм: %s", type(error).__name__)
@@ -83,17 +83,32 @@ def _unavailable(error: TelegramBadRequest) -> bool:
     ))
 
 
+def _is_live_target(target, bot_id: int, question_id: int, chat_id: int) -> bool:
+    return (
+        target is not None and target.bot_id == bot_id and target.question_id == question_id
+        and target.chat_id == chat_id and chat_id < 0 and getattr(target, "live_updates", False)
+        and target.receiver_user_id > 0 and target.ephemeral_message_id > 0
+        and target.message_id == 0
+    )
+
+
 async def refresh_question_charts(
     bot: Bot,
     question_id: int,
     get_statistics,
     *,
+    chat_id: int,
     statistics: dict[str, float] | None = None,
     chart: bytes | None = None,
     selected_choice: str | None = None,
 ) -> None:
-    async with _guard(("question", bot.id, question_id)):
-        targets = await chart_messages.list_charts(bot.id, question_id)
+    if type(chat_id) is not int or chat_id >= 0:
+        return
+    async with _guard(("question", bot.id, chat_id, question_id)):
+        targets = [
+            target for target in await chart_messages.list_charts(bot.id, question_id, chat_id=chat_id)
+            if _is_live_target(target, bot.id, question_id, chat_id)
+        ]
         if not targets:
             return
         # Read after acquiring the lock, so a delayed callback cannot roll the
@@ -114,8 +129,8 @@ async def refresh_question_charts(
                 # The ID may have been reused for a new question while waiting.
                 target = await chart_messages.get_chart(snapshot.id)
                 if (
-                    target is None or target.bot_id != bot.id
-                    or target.question_id != question_id or target.statistics_key == current_key
+                    not _is_live_target(target, bot.id, question_id, chat_id)
+                    or target.statistics_key == current_key
                 ):
                     continue
                 choice = getattr(target, "selected_choice", None)
@@ -133,19 +148,13 @@ async def refresh_question_charts(
                     if target.reply_markup else None
                 )
                 try:
-                    if target.ephemeral_message_id:
-                        await bot(EditEphemeralMessageMedia(
-                            chat_id=target.chat_id,
-                            receiver_user_id=target.receiver_user_id,
-                            ephemeral_message_id=target.ephemeral_message_id,
-                            media=media,
-                            reply_markup=reply_markup,
-                        ))
-                    else:
-                        await bot.edit_message_media(
-                            chat_id=target.chat_id, message_id=target.message_id, media=media,
-                            reply_markup=reply_markup,
-                        )
+                    await bot(EditEphemeralMessageMedia(
+                        chat_id=target.chat_id,
+                        receiver_user_id=target.receiver_user_id,
+                        ephemeral_message_id=target.ephemeral_message_id,
+                        media=media,
+                        reply_markup=reply_markup,
+                    ))
                 except TelegramBadRequest as error:
                     if "message is not modified" in error.message.casefold():
                         await chart_messages.mark_chart_updated(target, current_key)
@@ -158,11 +167,11 @@ async def refresh_question_charts(
                 except TelegramRetryAfter as error:
                     # Coalesce retries and read fresh statistics when the delay
                     # ends, including when this was the final vote in the game.
-                    _schedule_retry(bot, question_id, get_statistics, error.retry_after)
+                    _schedule_retry(bot, question_id, get_statistics, error.retry_after, chat_id=chat_id)
                     logger.warning("Telegram ограничил частоту обновления диаграмм")
                     break
                 except (TelegramAPIError, OSError, TimeoutError) as error:
-                    _schedule_retry(bot, question_id, get_statistics, 5)
+                    _schedule_retry(bot, question_id, get_statistics, 5, chat_id=chat_id)
                     logger.warning("Не удалось обновить диаграмму %s: %s", target.id, type(error).__name__)
                 else:
                     await chart_messages.mark_chart_updated(target, current_key)

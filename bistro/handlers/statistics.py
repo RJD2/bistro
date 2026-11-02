@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bistro.charts import messages as chart_messages
-from bistro.charts.updates import recipient_guard, refresh_question_charts, statistics_key
+from bistro.charts.updates import recipient_guard
 from bistro.database.session import async_session
 from bistro.handlers.game import (
     _is_group, _personal_message_options, get_question_statistics, result_text,
@@ -151,17 +151,10 @@ async def _show_word(callback: types.CallbackQuery, question_id: int):
             photo=photo, caption=chart_caption, parse_mode=parse_mode, **options,
             reply_markup=result_keyboard,
         )
-        await chart_messages.remember_chart(
-            bot_id=callback.bot.id, question_id=question_id, message=chart_message,
-            receiver_user_id=receiver_id, caption=chart_caption,
-            parse_mode=parse_mode, statistics_key=statistics_key(statistics),
-            reply_markup=result_keyboard, selected_choice=choice,
-        )
-    # Catch answers that arrived while this chart was being rendered or sent.
-    await refresh_question_charts(
-        callback.bot, question_id, get_question_statistics, statistics=statistics, chart=chart,
-        selected_choice=choice,
-    )
+        if personal:
+            # Statistics are snapshots. A reused personal message ID must no
+            # longer belong to a game card that receives live updates.
+            await chart_messages.forget_message(callback.bot.id, chart_message, receiver_id)
 
 
 async def process_statistics(callback: types.CallbackQuery):

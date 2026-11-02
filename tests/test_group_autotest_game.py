@@ -210,6 +210,8 @@ class GroupAutotestAnswerTests(unittest.IsolatedAsyncioTestCase):
                     [request[0].reply_markup for request in photos],
                 )
                 self.assertEqual(self.refresh.await_count, 2)
+                self.assertTrue(all(call.kwargs["live_updates"] for call in self.remember.await_args_list))
+                self.assertTrue(all(call.kwargs["chat_id"] == CHAT_ID for call in self.refresh.await_args_list))
                 self.assert_shared_question_untouched()
 
     async def test_repeat_daily_click_retains_saved_choice_without_another_vote_or_question(self):

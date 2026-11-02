@@ -133,14 +133,9 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("вы преступник", result.media.caption)
         self.assertEqual(result.media.media.data, PNG)
         self.assert_share_button(result.reply_markup, "преступник")
-        self.remember.assert_awaited_once()
-        self.assertEqual(self.remember.await_args.kwargs["reply_markup"], result.reply_markup)
-        self.assertEqual(self.remember.await_args.kwargs["selected_choice"], "преступник")
+        self.remember.assert_not_awaited()
         game.render_statistics_chart.assert_called_once_with(self.statistics, selected_choice="преступник")
-        self.refresh.assert_awaited_once_with(
-            self.bot, 17, game.get_question_statistics, statistics=self.statistics, chart=PNG,
-            selected_choice="преступник",
-        )
+        self.refresh.assert_not_awaited()
         self.assertIsNone(await self.state.get_state())
         self.assertEqual(await self.state.get_data(), {})
 
@@ -176,9 +171,8 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("И вы", text.text)
         self.assertIsNone(text.reply_markup)
         self.assert_share_button(photo.reply_markup, choice)
-        registration = self.remember.await_args.kwargs
-        self.assertEqual(registration["reply_markup"], photo.reply_markup)
-        self.assertEqual(registration["caption"], photo.caption)
+        self.remember.assert_not_awaited()
+        self.refresh.assert_not_awaited()
         self.assertIsNone(await self.state.get_state())
 
     async def test_repeated_daily_answer_keeps_saved_choice_without_another_vote(self):
@@ -194,7 +188,8 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("вы фотограф", result.media.caption)
         self.assert_share_button(result.reply_markup, "преступник")
         game.render_statistics_chart.assert_called_with(self.statistics, selected_choice="преступник")
-        self.assertEqual(self.remember.await_args.kwargs["selected_choice"], "преступник")
+        self.remember.assert_not_awaited()
+        self.refresh.assert_not_awaited()
 
     async def test_association_position_maps_to_result_and_statistics_identity(self):
         self.question = Question(
@@ -214,7 +209,8 @@ class AutotestGameTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("Рим", result.media.caption)
                 self.assert_share_button(result.reply_markup, expected)
                 game.render_statistics_chart.assert_called_with(self.statistics, selected_choice=expected)
-                self.assertEqual(self.remember.await_args.kwargs["selected_choice"], expected)
+                self.remember.assert_not_awaited()
+                self.refresh.assert_not_awaited()
 
     async def test_question_with_incomplete_associations_cannot_record_a_vote(self):
         for associo in (None, "", "  ", "снимок", "снимок,тюрьма,комната", "снимок,", "снимок,СНИМОК"):

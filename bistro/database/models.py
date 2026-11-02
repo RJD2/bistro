@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func, BigInteger, Index, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, false, func, BigInteger, Index, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -91,3 +91,5 @@ class ChartMessage(Base):
     # Keep the highlighted result with the card's personal caption after resets.
     selected_choice = Column(String, nullable=True)
     statistics_key = Column(String, nullable=False)
+    # Only results shown while answering in a group opt into later updates.
+    live_updates = Column(Boolean, nullable=False, default=False, server_default=false())

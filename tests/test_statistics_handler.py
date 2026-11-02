@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from contextlib import asynccontextmanager
 from html import escape
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from bistro.handlers import admin, statistics
+from bistro.charts import updates as chart_updates
 from bistro.ui.keyboards import get_main_menu
 from bistro.database.models import Answer, Question, User
 from bistro.handlers.states import GameStates, QuestionCreationStates
@@ -180,7 +182,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
             patch.object(statistics, "render_statistics_chart", self.renderer),
             patch.object(statistics.chart_messages, "remember_chart", self.remember),
             patch.object(statistics.chart_messages, "forget_message", self.forget),
-            patch.object(statistics, "refresh_question_charts", self.refresh),
+            patch.object(chart_updates, "refresh_question_charts", self.refresh),
         ]
         for active_patch in self.patches:
             active_patch.start()
@@ -310,7 +312,7 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(f"statistics:page:{USER_ID}:2", callbacks)
         self.assertEqual(self.requests("sendPhoto"), [])
 
-    async def test_selected_word_displays_exact_saved_answer_and_registers_live_chart(self):
+    async def test_selected_word_displays_exact_saved_answer_as_a_static_snapshot(self):
         choice = "фОтоГраф SQL & <художник>"
         self.configure_saved_choice(choice)
 
@@ -331,14 +333,9 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests("editMessageMedia"), [])
         self.get_statistics.assert_awaited_once_with(1, self.session)
         self.renderer.assert_called_once_with(self.get_statistics.return_value, selected_choice=choice)
-        registration = self.remember.await_args.kwargs
-        self.assertEqual(registration["question_id"], 1)
-        self.assertEqual(registration["selected_choice"], choice)
-        self.assertEqual(registration["receiver_user_id"], 0)
-        self.assertEqual(registration["caption"], photo.caption)
-        self.assertEqual(registration["parse_mode"], "HTML")
-        self.assertEqual(registration["reply_markup"], photo.reply_markup)
-        self.refresh.assert_awaited_once()
+        self.remember.assert_not_awaited()
+        self.refresh.assert_not_awaited()
+        self.forget.assert_not_awaited()
         statement = self.session.execute.await_args.args[0].compile(dialect=postgresql.dialect())
         self.assertIn("users.tg_id =", str(statement))
         self.assertIn("questions.id =", str(statement))
@@ -346,6 +343,57 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(1, statement.params.values())
         self.session.add.assert_not_called()
         self.session.commit.assert_not_awaited()
+
+    async def test_reopening_statistics_renders_current_percentages_without_editing_old_snapshots(self):
+        self.configure_saved_choice()
+        first = {"фотограф SQL & художник": 75.0, "преступник": 25.0}
+        latest = {"фотограф SQL & художник": 50.0, "преступник": 50.0}
+        self.get_statistics.side_effect = [first, latest]
+        self.renderer.side_effect = [b"first chart", b"latest chart"]
+
+        await self.feed_callback(f"statistics:word:{USER_ID}:1")
+        await self.feed_callback(f"statistics:word:{USER_ID}:1")
+
+        self.assertEqual(self.get_statistics.await_count, 2)
+        self.assertEqual([call.args[0] for call in self.renderer.call_args_list], [first, latest])
+        self.assertEqual([
+            next(iter(files.values())).data
+            for _, _, files in self.requests("sendPhoto")
+        ], [b"first chart", b"latest chart"])
+        self.assertEqual(self.requests("editMessageMedia"), [])
+        self.assertEqual(self.requests("editEphemeralMessageMedia"), [])
+        self.remember.assert_not_awaited()
+        self.refresh.assert_not_awaited()
+
+    async def test_group_statistics_forgets_reused_game_target_while_recipient_is_locked(self):
+        self.configure_saved_choice()
+        live_targets = {1002: "old game chart"}
+        locked = False
+
+        @asynccontextmanager
+        async def guard(bot_id, chat_id, receiver_id):
+            nonlocal locked
+            self.assertEqual((bot_id, chat_id, receiver_id), (self.bot.id, GROUP_ID, USER_ID))
+            locked = True
+            try:
+                yield
+            finally:
+                locked = False
+
+        async def forget(bot_id, message, receiver_id):
+            self.assertTrue(locked)
+            self.assertEqual((bot_id, receiver_id), (self.bot.id, USER_ID))
+            live_targets.pop(message.ephemeral_message_id, None)
+
+        self.forget.side_effect = forget
+        with patch.object(statistics, "recipient_guard", guard):
+            await self.feed_callback(f"statistics:word:{USER_ID}:1", chat_type=ChatType.SUPERGROUP)
+
+        self.assertEqual(live_targets, {})
+        self.assertFalse(locked)
+        self.forget.assert_awaited_once()
+        self.remember.assert_not_awaited()
+        self.refresh.assert_not_awaited()
 
     async def test_group_launcher_reveals_no_saved_words_and_is_available_to_each_player(self):
         for chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):
@@ -410,9 +458,12 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(self.requests("editEphemeralMessageMedia"), [])
         self.assertEqual(self.requests("editEphemeralMessageText"), [])
-        self.assertEqual(self.remember.await_args.kwargs["receiver_user_id"], USER_ID)
-        self.assertEqual(self.remember.await_args.kwargs["caption"], photo.caption)
-        self.assertEqual(self.remember.await_args.kwargs["selected_choice"], "программист")
+        self.remember.assert_not_awaited()
+        self.refresh.assert_not_awaited()
+        self.assertEqual(self.forget.await_count, 2)
+        forgotten = self.forget.await_args.args
+        self.assertEqual((forgotten[0], forgotten[2]), (self.bot.id, USER_ID))
+        self.assertEqual(forgotten[1].ephemeral_message_id, len(self.transport.requests) + 1000)
         self.renderer.assert_called_once_with(
             self.get_statistics.return_value, selected_choice="программист",
         )
@@ -438,16 +489,18 @@ class StatisticsHandlerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(text.parse_mode, "HTML")
                 self.assertIsNone(photo.caption)
                 self.assert_share_button(photo.reply_markup, choice)
-                self.assertEqual(self.remember.await_args.kwargs["reply_markup"], photo.reply_markup)
-                self.assertIsNone(self.remember.await_args.kwargs["caption"])
-                self.assertIsNone(self.remember.await_args.kwargs["parse_mode"])
-                self.assertEqual(self.remember.await_args.kwargs["selected_choice"], choice)
+                self.remember.assert_not_awaited()
+                self.refresh.assert_not_awaited()
                 if chat_type == ChatType.SUPERGROUP:
                     for payload in (text_payload, photo_payload):
                         self.assertEqual(json.loads(payload["ephemeral_message_parameters"]), {
                             "receiver_user_id": USER_ID, "callback_query_id": f"callback_{USER_ID}",
                         })
-                    self.forget.assert_awaited_once()
+                    self.assertEqual(self.forget.await_count, 2)
+                    self.assertEqual(
+                        [call.args[1].ephemeral_message_id for call in self.forget.await_args_list],
+                        [1002, 1003],
+                    )
                 else:
                     self.assertNotIn("ephemeral_message_parameters", text_payload)
                     self.assertNotIn("ephemeral_message_parameters", photo_payload)

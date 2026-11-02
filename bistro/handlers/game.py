@@ -120,6 +120,7 @@ async def _show_group_result(
             receiver_user_id=callback.from_user.id, caption=chart_caption,
             parse_mode=parse_mode, statistics_key=chart_key,
             reply_markup=reply_markup, selected_choice=selected_choice,
+            live_updates=True,
         )
 
 
@@ -210,22 +211,13 @@ async def reset_progress(message: types.Message, state: FSMContext):
         user = await get_or_create_user(message.from_user.id, session)
         await session.get(User, user.id, with_for_update=True)
 
-        result = await session.execute(
-            select(Answer.question_id).where(Answer.user_id == user.id).distinct()
-        )
-        affected_questions = [row[0] for row in result.all()]
-
         # Delete all of the user's answers.
         stmt = delete(Answer).where(Answer.user_id == user.id)
         await session.execute(stmt)
         await session.commit()
 
-    try:
-        await state.clear()
-        await message.answer("Ваш прогресс сброшен. Вы можете начать игру заново.", reply_markup=None)
-    finally:
-        for question_id in affected_questions:
-            await refresh_question_charts(message.bot, question_id, get_question_statistics)
+    await state.clear()
+    await message.answer("Ваш прогресс сброшен. Вы можете начать игру заново.", reply_markup=None)
 
 
 async def process_answer(callback: types.CallbackQuery, state: FSMContext):
@@ -299,28 +291,17 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             # The finally block still refreshes charts for other participants.
             return
         else:
-            async with recipient_guard(callback.bot.id, message.chat.id, 0):
-                if len(caption) <= 1024:
-                    await message.edit_media(
-                        media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
-                        reply_markup=result_keyboard,
-                    )
-                    chart_message = message
-                    chart_caption, parse_mode = caption, "HTML"
-                else:
-                    # A long result exceeds Telegram's photo caption limit.
-                    await message.edit_text(text=caption, parse_mode="HTML", reply_markup=None)
-                    chart_caption = f"📊 {capitalize_first(question.word)}"
-                    parse_mode = None
-                    chart_message = await message.answer_photo(
-                        photo=photo, caption=chart_caption, parse_mode=parse_mode,
-                        reply_markup=result_keyboard,
-                    )
-                await chart_messages.remember_chart(
-                    bot_id=callback.bot.id, question_id=qid, message=chart_message,
-                    receiver_user_id=0, caption=chart_caption,
-                    parse_mode=parse_mode, statistics_key=chart_key,
-                    reply_markup=result_keyboard, selected_choice=selected_choice,
+            if len(caption) <= 1024:
+                await message.edit_media(
+                    media=types.InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"),
+                    reply_markup=result_keyboard,
+                )
+            else:
+                # A long result exceeds Telegram's photo caption limit.
+                await message.edit_text(text=caption, parse_mode="HTML", reply_markup=None)
+                await message.answer_photo(
+                    photo=photo, caption=f"📊 {capitalize_first(question.word)}",
+                    reply_markup=result_keyboard,
                 )
 
         if action == "autotest_answer":
@@ -342,12 +323,13 @@ async def process_answer(callback: types.CallbackQuery, state: FSMContext):
             await message.answer(MESSAGES["game_over"])
             await state.clear()
     finally:
-        # A committed vote must refresh other players even if this player's
-        # result or next question could not be delivered.
-        await refresh_question_charts(
-            callback.bot, qid, get_question_statistics, statistics=stats, chart=chart,
-            selected_choice=selected_choice,
-        )
+        # A group answer refreshes only game cards in that same chat, even if
+        # this participant's result could not be delivered. Private cards are static.
+        if is_group:
+            await refresh_question_charts(
+                callback.bot, qid, get_question_statistics, chat_id=message.chat.id,
+                statistics=stats, chart=chart, selected_choice=selected_choice,
+            )
 
 
 def register_handlers_game(dp: Dispatcher):

@@ -134,9 +134,8 @@ class ProcessAnswerTests(unittest.IsolatedAsyncioTestCase):
         ):
             await game.process_answer(callback, state)
             renderer.assert_called_once_with(statistics, selected_choice=question.options.split(",")[0])
-            self.assertEqual(remember.await_args.kwargs["selected_choice"], question.options.split(",")[0])
-            self.assertEqual(refresh.await_args.kwargs["selected_choice"], question.options.split(",")[0])
-            self.assertEqual(refresh.await_args.kwargs["chart"], png)
+            remember.assert_not_awaited()
+            refresh.assert_not_awaited()
 
         callback.answer.assert_awaited_once()
         return session, message, state, png

@@ -5,6 +5,7 @@ message must replace or forget its old registration, including non-chart replies
 """
 
 from aiogram import types
+from aiogram.enums import ChatType
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -59,10 +60,16 @@ async def remember_chart(
     statistics_key: str,
     reply_markup: types.InlineKeyboardMarkup | None = None,
     selected_choice: str | None = None,
+    live_updates: bool = False,
 ) -> None:
     target = _message_target(bot_id, message, receiver_user_id)
     if target is None:
         return
+    live_updates = bool(
+        live_updates and message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}
+        and target["chat_id"] < 0 and target["receiver_user_id"] > 0
+        and target["ephemeral_message_id"] > 0
+    )
     statement = insert(ChartMessage).values(
         **target,
         question_id=question_id,
@@ -71,6 +78,7 @@ async def remember_chart(
         reply_markup=reply_markup.model_dump_json(exclude_none=True) if reply_markup else None,
         statistics_key=statistics_key,
         selected_choice=selected_choice,
+        live_updates=live_updates,
     )
     statement = statement.on_conflict_do_update(
         index_elements=list(_TARGET_FIELDS),
@@ -81,6 +89,7 @@ async def remember_chart(
             "reply_markup": statement.excluded.reply_markup,
             "statistics_key": statement.excluded.statistics_key,
             "selected_choice": statement.excluded.selected_choice,
+            "live_updates": statement.excluded.live_updates,
         },
     )
     async with async_session() as session:
@@ -100,11 +109,16 @@ async def forget_message(bot_id: int, message: types.Message, receiver_user_id: 
         await session.commit()
 
 
-async def list_charts(bot_id: int, question_id: int) -> list[ChartMessage]:
+async def list_charts(bot_id: int, question_id: int, *, chat_id: int) -> list[ChartMessage]:
     async with async_session() as session:
         result = await session.execute(
             select(ChartMessage)
-            .where(ChartMessage.bot_id == bot_id, ChartMessage.question_id == question_id)
+            .where(
+                ChartMessage.bot_id == bot_id, ChartMessage.question_id == question_id,
+                ChartMessage.chat_id == chat_id, ChartMessage.chat_id < 0,
+                ChartMessage.live_updates.is_(True), ChartMessage.receiver_user_id > 0,
+                ChartMessage.ephemeral_message_id > 0, ChartMessage.message_id == 0,
+            )
             .order_by(ChartMessage.id)
         )
         return list(result.scalars().all())
@@ -125,6 +139,7 @@ def _snapshot_conditions(chart: ChartMessage) -> tuple:
         ChartMessage.parse_mode == chart.parse_mode,
         ChartMessage.reply_markup == chart.reply_markup,
         ChartMessage.selected_choice == chart.selected_choice,
+        ChartMessage.live_updates == chart.live_updates,
     )
 
 

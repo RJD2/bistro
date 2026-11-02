@@ -47,12 +47,23 @@ def upgrade_chart_messages_selected_choice(connection):
         )
 
 
+def upgrade_chart_messages_live_updates(connection):
+    """Keep legacy cards static until a group game explicitly registers them"""
+    columns = {column["name"] for column in inspect(connection).get_columns("chart_messages")}
+    if "live_updates" not in columns:
+        if_not_exists = "IF NOT EXISTS " if connection.dialect.name == "postgresql" else ""
+        connection.exec_driver_sql(
+            f"ALTER TABLE chart_messages ADD COLUMN {if_not_exists}live_updates BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+
+
 async def init():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(upgrade_questions_associo)
         await conn.run_sync(upgrade_chart_messages_reply_markup)
         await conn.run_sync(upgrade_chart_messages_selected_choice)
+        await conn.run_sync(upgrade_chart_messages_live_updates)
 
 
 if __name__ == "__main__":

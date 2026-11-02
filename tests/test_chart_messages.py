@@ -44,10 +44,10 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(active_patch.stop)
 
     async def remember(self, source, *, question_id=1, receiver=111, caption="Вы салат", key="first",
-                       reply_markup=None, selected_choice=None):
+                       reply_markup=None, selected_choice=None, live_updates=True):
         await chart_messages.remember_chart(
             BOT_ID, question_id, source, receiver, caption, "HTML", key,
-            reply_markup=reply_markup, selected_choice=selected_choice,
+            reply_markup=reply_markup, selected_choice=selected_choice, live_updates=live_updates,
         )
         return compiled(self.session.execute.call_args.args[0])
 
@@ -88,8 +88,46 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             "ON CONFLICT (bot_id, chat_id, receiver_user_id, message_id, ephemeral_message_id) DO UPDATE",
             sql,
         )
-        for name in ("question_id", "caption", "parse_mode", "reply_markup", "statistics_key", "selected_choice"):
+        for name in ("question_id", "caption", "parse_mode", "reply_markup", "statistics_key", "selected_choice", "live_updates"):
             self.assertIn(f"{name} = excluded.{name}", sql)
+
+    async def test_live_updates_require_explicit_opt_in_and_a_personal_group_result(self):
+        source = message(message_id=0, ephemeral_id=72)
+        await chart_messages.remember_chart(BOT_ID, 1, source, 111, None, None, "first")
+        self.assertFalse(compiled(self.session.execute.call_args.args[0]).params["live_updates"])
+
+        game = await self.remember(source)
+        regular_group = await self.remember(message(message_id=17))
+        private = await self.remember(message(message_id=17, chat_id=111))
+        snapshot = await self.remember(source, live_updates=False)
+        self.assertTrue(game.params["live_updates"])
+        self.assertTrue(all(not target.params["live_updates"] for target in (
+            regular_group, private, snapshot,
+        )))
+
+    async def test_database_listing_excludes_other_chats_private_and_statistics_cards(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        ChartMessage.__table__.create(engine)
+        with Session(engine) as database:
+            self.session.execute.side_effect = database.execute
+            self.session.commit.side_effect = database.commit
+            await self.remember(message(message_id=0, ephemeral_id=72), receiver=111)
+            await self.remember(message(message_id=0, ephemeral_id=72), receiver=222,
+                                live_updates=False)
+            await self.remember(message(message_id=0, ephemeral_id=72, chat_id=-100987654321),
+                                receiver=333)
+            await self.remember(message(message_id=17, chat_id=444), receiver=444)
+            await self.remember(message(message_id=18), receiver=555)
+
+            live = await chart_messages.list_charts(BOT_ID, 1, chat_id=CHAT_ID)
+
+            self.assertEqual([target.receiver_user_id for target in live], [111])
+            self.assertEqual(await chart_messages.list_charts(BOT_ID, 1, chat_id=444), [])
+            # Reusing a game card's target for a snapshot opts it out of updates.
+            await self.remember(message(message_id=0, ephemeral_id=72), receiver=111,
+                                live_updates=False)
+            self.assertEqual(await chart_messages.list_charts(BOT_ID, 1, chat_id=CHAT_ID), [])
 
     async def test_personal_keyboards_round_trip_through_database_and_reused_target_clears_old_keyboard(self):
         engine = create_engine("sqlite://")
@@ -112,7 +150,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         with Session(engine) as database:
             self.session.execute.side_effect = database.execute
             self.session.commit.side_effect = database.commit
-            stored = await chart_messages.list_charts(BOT_ID, 1)
+            stored = await chart_messages.list_charts(BOT_ID, 1, chat_id=CHAT_ID)
             self.assertEqual([chart.receiver_user_id for chart in stored], [111, 222])
             self.assertEqual([chart.selected_choice for chart in stored], ["фотограф", "император"])
             self.assertEqual([
@@ -121,10 +159,10 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             await self.remember(message(message_id=0, ephemeral_id=72), receiver=111,
                                 question_id=2, reply_markup=None)
             database.expire_all()
-            replacement = (await chart_messages.list_charts(BOT_ID, 2))[0]
+            replacement = (await chart_messages.list_charts(BOT_ID, 2, chat_id=CHAT_ID))[0]
             self.assertIsNone(replacement.reply_markup)
             self.assertIsNone(replacement.selected_choice)
-            self.assertEqual(len(await chart_messages.list_charts(BOT_ID, 1)), 1)
+            self.assertEqual(len(await chart_messages.list_charts(BOT_ID, 1, chat_id=CHAT_ID)), 1)
 
     async def test_next_ephemeral_invalidates_only_that_receivers_exact_target(self):
         await chart_messages.forget_message(BOT_ID, message(message_id=0, ephemeral_id=72), 111)
@@ -164,6 +202,7 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
             receiver_user_id=111, message_id=0, ephemeral_message_id=72,
             caption="Вы салат", parse_mode="HTML", statistics_key="old", reply_markup="{}",
             selected_choice="салат",
+            live_updates=True,
         )
         await chart_messages.mark_chart_updated(old, "new")
         update = compiled(self.session.execute.call_args.args[0])
@@ -184,16 +223,21 @@ class ChartMessageRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update.params["statistics_key"], "new")
         self.assertEqual(self.session.commit.await_count, 2)
 
-    async def test_loading_targets_is_scoped_to_bot_and_question_and_can_reread_a_target(self):
+    async def test_loading_targets_is_scoped_to_bot_group_and_question_and_can_reread_a_target(self):
         reference = ChartMessage(id=9, bot_id=BOT_ID, question_id=1, statistics_key="latest")
         result = MagicMock()
         result.scalars.return_value.all.return_value = [reference]
         self.session.execute.return_value = result
         self.session.get.return_value = reference
 
-        self.assertEqual(await chart_messages.list_charts(BOT_ID, 1), [reference])
+        self.assertEqual(await chart_messages.list_charts(BOT_ID, 1, chat_id=CHAT_ID), [reference])
         statement = compiled(self.session.execute.call_args.args[0])
-        self.assertEqual(statement.params, {"bot_id_1": BOT_ID, "question_id_1": 1})
+        self.assertEqual(statement.params, {
+            "bot_id_1": BOT_ID, "question_id_1": 1, "chat_id_1": CHAT_ID,
+            "chat_id_2": 0, "receiver_user_id_1": 0, "ephemeral_message_id_1": 0,
+            "message_id_1": 0,
+        })
+        self.assertIn("chart_messages.live_updates IS true", str(statement))
         self.assertIn("ORDER BY chart_messages.id", str(statement))
         self.assertIs(await chart_messages.get_chart(9), reference)
         self.session.get.assert_awaited_once_with(ChartMessage, 9)
