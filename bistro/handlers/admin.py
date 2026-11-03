@@ -12,6 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from bistro import config
 from bistro.database.session import async_session
+from bistro.services.statistics import get_bot_statistics
+from bistro.ui.keyboards import BOT_STATISTICS_BUTTON
 from bistro.ui.menus import get_main_menu_for_chat
 from bistro.database.models import Question
 from bistro.handlers.states import AssocioCreationStates, BulkQuestionCreationStates, QuestionCreationStates
@@ -49,6 +51,41 @@ ASSOCIO_CREATION_STATES = {
 
 def _is_owner(user: types.User | None) -> bool:
     return config.ADMIN_ID > 0 and user is not None and user.id == config.ADMIN_ID
+
+
+async def show_bot_statistics(message: types.Message):
+    if not _is_owner(message.from_user) or message.chat.type != ChatType.PRIVATE:
+        await message.answer("Статистика бота доступна только владельцу в личном чате.")
+        return
+    try:
+        async with async_session() as session:
+            statistics = await get_bot_statistics(session)
+    except SQLAlchemyError:
+        logger.exception("Не удалось загрузить статистику бота")
+        await message.answer("Не удалось загрузить статистику бота. Попробуйте еще раз позже.")
+        return
+
+    average = f"{statistics.average_answers_per_participant:.2f}".replace(".", ",")
+    text = (
+        f"{BOT_STATISTICS_BUTTON}\n\n"
+        f"Всего участников: {statistics.total_participants}\n"
+        f"Всего вопросов: {statistics.total_questions}\n"
+        f"Всего ответов на вопросы: {statistics.total_answers}\n"
+        f"В среднем вопросов на участника: {average}\n\n"
+    )
+    popular = statistics.most_popular_question
+    if popular is None:
+        text += "Самый популярный вопрос: нет данных."
+    else:
+        text += (
+            f"Самый популярный вопрос: «{capitalize_first(popular.word)}»\n"
+            f"Ответивших участников: {popular.answer_count}"
+        )
+    text += (
+        "\n\nУчастники — игроки хотя бы с одним сохранённым ответом. "
+        "Сброшенные ответы не учитываются."
+    )
+    await message.answer(text, parse_mode=None)
 
 
 async def _allow_message(message: types.Message) -> bool:
@@ -810,6 +847,8 @@ async def remind_associo_confirmation(message: types.Message, state: FSMContext)
 
 
 def register_handlers_admin(dp: Dispatcher):
+    dp.message.register(show_bot_statistics, Command("bot_statistics"))
+    dp.message.register(show_bot_statistics, F.text.in_({BOT_STATISTICS_BUTTON, "Статистика бота"}))
     dp.message.register(start_add_question, Command("add_question"))
     dp.message.register(start_add_question, F.text == ADD_QUESTION_BUTTON)
     dp.message.register(start_add_questions, Command("add_questions"))

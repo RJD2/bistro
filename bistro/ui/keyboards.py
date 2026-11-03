@@ -5,6 +5,7 @@ from bistro.ui.text_formatting import capitalize_first
 
 AUTOTEST_OFF_BUTTON = "⏰ Автотест"
 AUTOTEST_ON_BUTTON = "🚫 Автотест"
+BOT_STATISTICS_BUTTON = "📈 Статистика бота"
 
 
 def get_keyboard(options: list, qid: int, *, callback_prefix: str = "answer"):
@@ -24,6 +25,7 @@ def get_main_menu(is_admin: bool = False, *, autotest_enabled: bool = False) -> 
         [KeyboardButton(text="🔄 Сбросить прогресс")]
     ]
     if is_admin:
+        buttons.append([KeyboardButton(text=BOT_STATISTICS_BUTTON)])
         buttons.append([KeyboardButton(text="➕ Добавить вопрос")])
         buttons.append([KeyboardButton(text="📚 Добавить вопросы")])
         buttons.append([KeyboardButton(text="🧩 Добавить ассоциации")])

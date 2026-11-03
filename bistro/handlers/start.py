@@ -62,7 +62,8 @@ async def cmd_help(message: types.Message):
         )
     if is_owner_chat(message):
         text += (
-            "\n\n/add_question — добавить вопрос"
+            "\n\n/bot_statistics — общая статистика бота"
+            "\n/add_question — добавить вопрос"
             "\n/add_questions — добавить вопросы списком"
             "\n/add_associo [слово] — заполнить ассоциации к существующим вопросам"
             "\n/cancel — отменить добавление"
