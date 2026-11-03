@@ -22,10 +22,11 @@ def get_main_menu(is_admin: bool = False, *, autotest_enabled: bool = False) -> 
         [KeyboardButton(text="🎮 Быстротест")],
         [KeyboardButton(text=AUTOTEST_ON_BUTTON if autotest_enabled else AUTOTEST_OFF_BUTTON)],
         [KeyboardButton(text="📊 Статистика")],
-        [KeyboardButton(text="🔄 Сбросить прогресс")]
     ]
     if is_admin:
         buttons.append([KeyboardButton(text=BOT_STATISTICS_BUTTON)])
+    buttons.append([KeyboardButton(text="🔄 Сбросить прогресс")])
+    if is_admin:
         buttons.append([KeyboardButton(text="➕ Добавить вопрос")])
         buttons.append([KeyboardButton(text="📚 Добавить вопросы")])
         buttons.append([KeyboardButton(text="🧩 Добавить ассоциации")])
