@@ -14,8 +14,14 @@ class User(Base):
     answers = relationship("Answer", back_populates="user")
 
 
+answer_user_question_index = Index(
+    "uq_answers_user_question", "user_id", "question_id", unique=True,
+)
+
+
 class Answer(Base):
     __tablename__ = "answers"
+    __table_args__ = (answer_user_question_index,)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

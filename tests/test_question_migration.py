@@ -7,9 +7,11 @@ os.environ.setdefault("DB", "postgresql+asyncpg://user:password@localhost/bistro
 
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 
 from migrations.add_questions import QUESTIONS
 from migrations.init_db import (
+    upgrade_answers_uniqueness,
     upgrade_chart_messages_live_updates, upgrade_chart_messages_reply_markup, upgrade_chart_messages_selected_choice,
     upgrade_questions_associo,
 )
@@ -263,6 +265,68 @@ class QuestionMigrationTests(unittest.TestCase):
                 connection.exec_driver_sql("SELECT associo FROM questions WHERE word = 'замок'").scalar_one(),
                 "ключ,крепость",
             )
+
+
+class AnswerUniquenessMigrationTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine("sqlite://")
+        self.addCleanup(self.engine.dispose)
+
+    def test_legacy_upgrade_keeps_first_answer_per_pair_and_allows_answer_after_reset(self):
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE answers (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), "
+                "question_id INTEGER NOT NULL, choice VARCHAR NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+            )
+            Base.metadata.create_all(connection)
+            connection.exec_driver_sql("INSERT INTO users (id, tg_id) VALUES (1, 111), (2, 222)")
+            connection.exec_driver_sql(
+                "INSERT INTO answers (id, user_id, question_id, choice) VALUES "
+                "(8, 1, 10, 'другой вариант'), (3, 1, 10, 'первый ответ'), "
+                "(11, 1, 10, 'первый ответ'), (9, 2, 10, 'другой участник'), "
+                "(5, 1, 20, 'другой вопрос'), (12, 2, 20, 'поздний ответ'), (2, 2, 20, 'ранний ответ')"
+            )
+
+            upgrade_answers_uniqueness(connection)
+            upgrade_answers_uniqueness(connection)
+
+            self.assertEqual(
+                connection.exec_driver_sql(
+                    "SELECT id, user_id, question_id, choice FROM answers ORDER BY id"
+                ).all(),
+                [
+                    (2, 2, 20, "ранний ответ"), (3, 1, 10, "первый ответ"),
+                    (5, 1, 20, "другой вопрос"), (9, 2, 10, "другой участник"),
+                ],
+            )
+            with self.assertRaises(IntegrityError), connection.begin_nested():
+                connection.exec_driver_sql(
+                    "INSERT INTO answers (user_id, question_id, choice) VALUES (1, 10, 'повторный ответ')"
+                )
+
+            connection.exec_driver_sql("DELETE FROM answers WHERE user_id = 1")
+            connection.exec_driver_sql(
+                "INSERT INTO answers (user_id, question_id, choice) VALUES (1, 10, 'новый ответ')"
+            )
+            self.assertEqual(
+                connection.exec_driver_sql(
+                    "SELECT user_id, question_id, choice FROM answers ORDER BY user_id, question_id"
+                ).all(),
+                [(1, 10, "новый ответ"), (2, 10, "другой участник"), (2, 20, "ранний ответ")],
+            )
+
+    def test_fresh_schema_rejects_a_second_answer_to_the_same_question(self):
+        with self.engine.begin() as connection:
+            Base.metadata.create_all(connection)
+            connection.exec_driver_sql("INSERT INTO users (id, tg_id) VALUES (1, 111)")
+            connection.exec_driver_sql(
+                "INSERT INTO answers (user_id, question_id, choice) VALUES (1, 10, 'первый ответ')"
+            )
+
+            with self.assertRaises(IntegrityError), connection.begin_nested():
+                connection.exec_driver_sql(
+                    "INSERT INTO answers (user_id, question_id, choice) VALUES (1, 10, 'повторный ответ')"
+                )
 
 
 if __name__ == "__main__":

@@ -49,6 +49,7 @@ class BotStatisticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(statistics.most_popular_question)
 
     async def test_counts_unique_participant_question_pairs_and_ranks_by_participants(self):
+        self.database.connection().exec_driver_sql("DROP INDEX uq_answers_user_question")
         self.database.add_all([
             User(id=1, tg_id=111),
             User(id=2, tg_id=222),

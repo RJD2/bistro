@@ -12,14 +12,45 @@ from aiogram import types
 from aiogram.fsm.context import FSMContext
 from PIL import Image
 from matplotlib.patches import Patch
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from bistro.handlers import game
-from bistro.database.models import Question
+from bistro.database.models import Answer, Question, User
 from bistro.charts.rendering import render_statistics_chart
 
 
 class QuestionStatisticsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_counts_only_the_first_answer_per_user_for_the_question(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        for model in (User, Question, Answer):
+            model.__table__.create(engine)
+        with Session(engine) as database:
+            database.connection().exec_driver_sql("DROP INDEX uq_answers_user_question")
+            database.add_all([
+                User(id=1, tg_id=111),
+                User(id=2, tg_id=222),
+                User(id=3, tg_id=333),
+                Question(id=1, word="камера", options="фотограф,велосипедист,преступник"),
+                Question(id=2, word="замок", options="слесарь,рыцарь"),
+                Answer(id=1, user_id=1, question_id=2, choice="слесарь"),
+                Answer(id=2, user_id=1, question_id=1, choice="фотограф"),
+                Answer(id=3, user_id=1, question_id=1, choice="фотограф"),
+                Answer(id=4, user_id=1, question_id=1, choice="велосипедист"),
+                Answer(id=5, user_id=2, question_id=1, choice="преступник"),
+                Answer(id=6, user_id=3, question_id=2, choice="рыцарь"),
+            ])
+            database.flush()
+            session = AsyncMock(spec=AsyncSession)
+            session.execute.side_effect = database.execute
+            session.get.side_effect = database.get
+
+            statistics = await game.get_question_statistics(1, session)
+
+        self.assertEqual(statistics, {"фотограф": 50.0, "велосипедист": 0.0, "преступник": 50.0})
+
     async def test_percentages_include_unselected_options_in_question_order(self):
         session = AsyncMock(spec=AsyncSession)
         result = MagicMock()

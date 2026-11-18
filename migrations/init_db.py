@@ -1,8 +1,37 @@
 import asyncio
 from sqlalchemy import inspect
+from sqlalchemy.schema import CreateIndex
 
 from bistro.database.session import engine
-from bistro.database.models import Base
+from bistro.database.models import Base, answer_user_question_index
+
+
+def upgrade_answers_uniqueness(connection):
+    """Keep the first saved answer per user and question."""
+    index_name = answer_user_question_index.name
+    if inspect(connection).has_index("answers", index_name):
+        return
+
+    if connection.dialect.name == "postgresql":
+        # Block answer writes and competing migrations until the index is ready.
+        connection.exec_driver_sql("LOCK TABLE answers IN SHARE ROW EXCLUSIVE MODE")
+        if inspect(connection).has_index("answers", index_name):
+            return
+
+    connection.exec_driver_sql("""
+        DELETE FROM answers
+        WHERE id IN (
+            SELECT id
+            FROM (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY user_id, question_id ORDER BY id
+                ) AS answer_position
+                FROM answers
+            ) AS ordered_answers
+            WHERE answer_position > 1
+        )
+    """)
+    connection.execute(CreateIndex(answer_user_question_index, if_not_exists=True))
 
 
 def upgrade_questions_associo(connection):
@@ -64,6 +93,7 @@ async def init():
         await conn.run_sync(upgrade_chart_messages_reply_markup)
         await conn.run_sync(upgrade_chart_messages_selected_choice)
         await conn.run_sync(upgrade_chart_messages_live_updates)
+        await conn.run_sync(upgrade_answers_uniqueness)
 
 
 if __name__ == "__main__":

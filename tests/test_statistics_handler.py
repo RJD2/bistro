@@ -74,6 +74,7 @@ class AnsweredQuestionsTests(unittest.IsolatedAsyncioTestCase):
         for model in (User, Question, Answer):
             model.__table__.create(engine)
         with Session(engine) as database:
+            database.connection().exec_driver_sql("DROP INDEX uq_answers_user_question")
             database.add_all([
                 User(id=1, tg_id=USER_ID), User(id=2, tg_id=USER_ID + 1),
                 *[

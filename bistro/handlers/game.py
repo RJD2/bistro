@@ -178,10 +178,15 @@ async def start_shared_game(message: types.Message, state: FSMContext, question_
 
 
 async def get_question_statistics(question_id: int, session: AsyncSession) -> dict[str, float]:
-    # Count answers for each option.
-    result = await session.execute(
-        select(Answer.choice, func.count(Answer.choice))
+    # Use the same first saved choice as the game and personal statistics.
+    first_answer_ids = (
+        select(func.min(Answer.id))
         .where(Answer.question_id == question_id)
+        .group_by(Answer.user_id)
+    )
+    result = await session.execute(
+        select(Answer.choice, func.count())
+        .where(Answer.id.in_(first_answer_ids))
         .group_by(Answer.choice)
     )
     choices_count = {row[0]: row[1] for row in result.all()}

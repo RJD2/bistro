@@ -199,6 +199,7 @@ class SharingTests(unittest.IsolatedAsyncioTestCase):
         self.assert_shared_result(self.answers()[0], choice)
 
     async def test_duplicate_historical_answers_share_the_first_saved_choice(self):
+        self.database.connection().exec_driver_sql("DROP INDEX uq_answers_user_question")
         self.database.add(Answer(user_id=1, question_id=QUESTION_ID, choice="другой результат"))
         self.database.commit()
 
